@@ -1,0 +1,683 @@
+/* ===== 基础重置 ===== */
+* {
+    cursor: none !important;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+
+/* ===== 根变量 =====*/
+:root {
+    --black: #000;
+    --bg: #323232;
+    --bg-alt: #191919;
+    --text: #E1E1E1;
+    --text-muted: #9aa3b2;
+    --accent: #E11919;
+    --border: #E13232;
+    --border-shadow: #320A0A;
+    --nav-width: 75px;
+    /* 左侧导航栏宽度 */
+
+    /* 时长变量由 JS 注入，这里只给默认值，防止 JS 没加载 */
+    --t-fade-delay: 0s;
+    --t-fade-dur: 0.8s;
+    --t-maskShrink-delay: 2.8s;
+    --t-maskShrink-dur: 1.5s;
+    --t-maskFade-delay: 4.3s;
+    --t-maskFade-dur: 0.5s;
+    --t-cross-delay: 4.8s;
+    --t-cross-dur: 1.2s;
+    --t-body-delay: 0s;
+    --t-body-dur: 2.5s;
+    --t-total: 6s;
+}
+
+.crosshair-h,
+.crosshair-v {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: var(--black, #E11919);
+    z-index: 9997;
+    pointer-events: none;
+    will-change: transform;
+    transition:
+        transform var(--t-cross-dur, 1.2s) cubic-bezier(0.8, 0, 0.35, 1),
+        background-color 0.35s ease;
+}
+
+/* 水平线：横跨整个屏幕，用 translateY 控制上下位置 */
+.crosshair-h {
+    background: linear-gradient(90deg, transparent, var(--black), transparent);
+    transform-origin: 0 50vh;
+    /* 默认居中，JS 会改成鼠标 Y */
+    transform: scaleY(1);
+    /* 初始：100vh 高，铺满 */
+}
+
+/* 垂直线：纵跨整个屏幕，用 translateX 控制左右位置 */
+.crosshair-v {
+    background: linear-gradient(180deg, transparent, var(--black), transparent);
+    transform-origin: 50vw 0;
+    /* 默认居中，JS 会改成鼠标 X */
+    transform: scaleX(1);
+    /* 初始：100vw 宽，铺满 */
+}
+
+/* 鼠标离开窗口时隐藏 */
+body.crosshair-hidden .crosshair-h,
+body.crosshair-hidden .crosshair-v {
+    opacity: 0;
+}
+
+/* 悬停交互元素时变色 */
+body.crosshair-hover .crosshair-h,
+body.crosshair-hover .crosshair-v {
+    background: var(--text);
+}
+
+/* 收缩结束后：transform 变成即时，但颜色过渡保留 */
+body.crosshair-active-done .crosshair-h,
+body.crosshair-active-done .crosshair-v {
+    --crosshair-transform-dur: 0s;
+}
+
+body.crosshair-active .crosshair-h {
+    transform: scaleY(var(--crosshair-h-scale));
+}
+
+body.crosshair-active .crosshair-v {
+    transform: scaleX(var(--crosshair-v-scale));
+}
+
+/* ===== 红色遮罩：延迟 → 缩到左侧 + 延迟 → 淡出 ===== */
+.splash-遮罩 {
+    position: fixed;
+    inset: 0;
+    background: var(--accent);
+    z-index: 9998;
+    animation:
+        maskShrink var(--t-maskShrink-dur, 1.5s) ease var(--t-maskShrink-delay, 2.8s) forwards,
+        maskFade var(--t-maskFade-dur, 0.5s) ease var(--t-maskFade-delay, 4.3s) forwards;
+}
+
+@keyframes maskShrink {
+    from {
+        clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    }
+
+    to {
+        clip-path: polygon(0 0, var(--nav-width) 0, var(--nav-width) 100%, 0 100%);
+    }
+}
+
+@keyframes maskFade {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+/* ===== 渐显遮罩：延迟 → 淡出 ===== */
+.splash-渐显 {
+    position: fixed;
+    inset: 0;
+    background: var(--black);
+    z-index: 9999;
+    animation: splashFade var(--t-fade-dur, 0.8s) ease var(--t-fade-delay, 0s) forwards;
+}
+@keyframes splashFade {
+    to {
+        opacity: 0;
+    }
+}
+.splash-渐显.hide {
+    opacity: 0;
+}
+
+
+/* ============================== 视觉 ==============================*/
+/* ===== 全屏粒子层 =====*/
+#particle-layer {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;              /* 比准星 9997 低，比内容高 */
+    pointer-events: none;       /* 不挡鼠标 */
+    display: block;
+}
+
+/* 容器：承载液滴层 + 内容层 */
+.hero-box {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* overflow: hidden;  ← 删掉或改成 visible */
+    overflow: visible;
+}
+/* 液滴层：铺满，开启 goo 滤镜 */
+.liquid-bg {
+    transform: rotate(45deg);
+    position: absolute;
+    inset: -50%;
+    z-index: 0;
+    filter: url(#goo);
+    pointer-events: none;
+}
+/* 单个液滴：所有可变量都从 CSS 变量读，变量由 JS 注入 */
+.blob {
+    position: absolute;
+    top: var(--top, 50%);
+    left: var(--left, 50%);
+    width: var(--size, 200px);
+    height: var(--size, 200px);
+    border-radius: 5%;
+    background: var(--color, var(--black));
+
+    translate: -50% -50%;
+    will-change: translate, transform, scale;
+
+    animation:
+        blobPulse var(--pulse-dur, 4s) ease-in-out var(--pulse-delay, 0s) infinite,
+        blobWobble 6s ease-in-out infinite;
+}
+@keyframes blobPulse {
+    0%, 100% { scale: var(--scale-min, 0.85); }
+    50%      { scale: var(--scale-max, 1.15); }
+}
+@keyframes blobWobble {
+    0%, 100% {
+        border-radius: 4% 5% 5% 4% / 5% 4% 5% 5%;
+    }
+    25% {
+        border-radius: 6% 4% 4% 5% / 5% 6% 4% 4%;
+    }
+    50% {
+        border-radius: 4% 5% 6% 4% / 4% 5% 5% 5%;
+    }
+    75% {
+        border-radius: 5% 4% 4% 6% / 6% 4% 5% 4%;
+    }
+}
+/* 内容层：盖在液滴上面 */
+.hero-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+}
+
+
+html {
+    scroll-behavior: smooth;
+}
+
+.page-zoom {
+    height: 100vh;
+    overflow: hidden;
+    animation: body缩放 var(--t-body-dur, 2.5s) ease-in-out var(--t-body-delay, 0s) forwards;
+}
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+        "PingFang SC", 'Open Sans', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    height: 100vh;
+    overflow: hidden;
+    /* 禁止 body 自身滚动，滚动交给 main */
+}
+
+@keyframes body缩放 {
+    0% {
+        transform: scale(1.5);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+body.locked {
+    pointer-events: none;
+    /* 鼠标点不动 */
+    overflow: hidden;
+    /* 页面滚不动 */
+}
+
+body.locked main {
+    overflow: hidden;
+    /* main 的横向滚动也冻住 */
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+img {
+    max-width: 100%;
+    display: block;
+}
+
+/* ===== 左侧导航栏 ===== */
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--nav-width);
+    height: 100vh;
+    background: var(--bg-alt);
+    border-right: 1px solid var(--border);
+    box-shadow:
+        0 0 8px var(--border),
+        0 0 20px var(--border-shadow);
+    padding: 20px 20px;
+    z-index: 100;
+}
+
+.nav-container {
+    display: flex;
+    flex-direction: column;
+    gap: 45px;
+}
+
+.logo {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+        "PingFang SC", 'Open Sans', 'Microsoft YaHei', sans-serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: var(--text);
+}
+
+.nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    list-style: none;
+}
+
+.nav-links a {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    transition: color 0.2s, transform 0.2s;
+}
+
+.nav-links a:hover {
+    color: var(--accent);
+    transform: translateX(4px);
+}
+
+/* ===== 横向滚动主区域 ===== */
+main {
+    margin-left: var(--nav-width);
+    height: 100vh;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* 横向滚动条美化 */
+main::-webkit-scrollbar {
+    height: 0px;
+}
+
+main::-webkit-scrollbar-track {
+    background: var(--bg-alt);
+}
+
+main::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+main::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+/* ===== 每个区块占满一屏 ===== */
+.section,
+.hero {
+    flex: 0 0 calc(100vw - var(--nav-width));
+    height: 100vh;
+    padding: 60px 40px;
+}
+
+.section {
+    overflow-y: auto;
+}
+
+.hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: visible;   /* 让液滴能跑出去 */
+}
+
+/* ===== Section 标题 ===== */
+.section h2 {
+    font-size: 1.8rem;
+    margin-bottom: 28px;
+    position: relative;
+    padding-left: 14px;
+}
+
+.section h2::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+.section h3 {
+    margin: 24px 0 12px;
+    font-size: 1.15rem;
+}
+
+.section.alt-bg {
+    background: var(--bg-alt);
+}
+
+/* 区块内部内容居中容器 */
+.container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+
+.hero h1 {
+    font-size: 2.6rem;
+    margin-bottom: 12px;
+}
+
+
+.highlight {
+    color: var(--accent);
+}
+
+.subtitle {
+    color: var(--text-muted);
+    margin-bottom: 28px;
+}
+
+.hero-buttons {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.btn.primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.btn.primary:hover {
+    opacity: 0.85;
+}
+
+.btn.ghost {
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.btn.ghost:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ===== 关于我 ===== */
+.about-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 28px;
+    align-items: start;
+}
+
+.avatar {
+    width: 160px;
+    height: 160px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+}
+
+.about-grid p+p {
+    margin-top: 12px;
+}
+
+/* ===== 技能 ===== */
+.skill-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.skill-list li {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* ===== 项目卡片 ===== */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 22px;
+}
+
+.card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+}
+
+.card img {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+}
+
+.card h3,
+.card p,
+.card .link {
+    padding: 0 16px;
+}
+
+.card h3 {
+    margin-top: 16px;
+}
+
+.card p {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    margin: 8px 0 14px;
+}
+
+.card .link {
+    display: inline-block;
+    padding-bottom: 16px;
+    font-size: 0.9rem;
+}
+
+/* ===== 多媒体 ===== */
+audio {
+    width: 100%;
+    max-width: 480px;
+}
+
+video {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+}
+
+.gallery img {
+    border-radius: 10px;
+    height: 160px;
+    object-fit: cover;
+}
+
+/* ===== Unity 游戏区 ===== */
+#game iframe {
+    width: 100%;
+    max-width: 1920px;
+    max-height: 1080px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: block;
+}
+
+/* ===== 联系我 ===== */
+.contact-list {
+    list-style: none;
+}
+
+.contact-list li {
+    margin-bottom: 10px;
+}
+
+/* ===== 页脚：贴在左侧导航栏底部 ===== */
+.footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: var(--nav-width);
+    padding: 0;
+    font-size: 0.70rem;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
+    background: var(--bg-alt);
+    z-index: 101;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.footer p {
+    white-space: nowrap;
+}
+
+/* ===== 移动端 / 小屏：回退成纵向布局 ===== */
+@media (max-width: 768px) {
+    body {
+        height: auto;
+        overflow: auto;
+    }
+
+    .navbar {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        height: auto;
+        padding: 14px 20px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .nav-container {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .nav-links {
+        flex-direction: row;
+        gap: 14px;
+    }
+
+    .nav-links a:hover {
+        transform: none;
+    }
+
+    main {
+        margin-left: 0;
+        height: auto;
+        display: block;
+        overflow: visible;
+        scroll-snap-type: none;
+    }
+
+    .section,
+    .hero {
+        width: 100%;
+        height: auto;
+        min-height: auto;
+        overflow-y: visible;
+        padding: 60px 0;
+    }
+
+    .hero {
+        min-height: 70vh;
+    }
+
+    .about-grid {
+        grid-template-columns: 1fr;
+        text-align: center;
+    }
+
+    .avatar {
+        margin: 0 auto;
+    }
+
+    .hero h1 {
+        font-size: 2rem;
+    }
+
+    .footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: var(--nav-width);
+        padding: 20px 0;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        border-right: 1px solid var(--border);
+        background: var(--bg);
+        z-index: 101;
+
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+}
