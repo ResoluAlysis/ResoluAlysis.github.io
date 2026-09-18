@@ -1,0 +1,657 @@
+/* ============================================================
+   1. 基础重置
+   ============================================================ */
+* {
+    cursor: none !important;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* ============================================================
+   2. 根变量
+   ============================================================ */
+:root {
+    /* 配色 */
+    --black: #000;
+    --bg: #323232;
+    --bg-alt: #191919;
+    --text: #E1E1E1;
+    --text-muted: #9aa3b2;
+    --accent: #E11919;
+    --border: #E13232;
+    --border-shadow: #320A0A;
+
+    /* 布局 */
+    --nav-width: 75px;
+
+    /* 开屏时长（由 JS 注入，这里是默认值） */
+    --t-fade-delay: 0s;
+    --t-fade-dur: 0.8s;
+    --t-maskShrink-delay: 2.8s;
+    --t-maskShrink-dur: 1.5s;
+    --t-maskFade-delay: 4.3s;
+    --t-maskFade-dur: 0.5s;
+    --t-cross-delay: 4.8s;
+    --t-cross-dur: 1.2s;
+    --t-body-delay: 0s;
+    --t-body-dur: 2.5s;
+    --t-total: 6s;
+}
+
+/* ============================================================
+   3. 全局布局
+   ============================================================ */
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+        "PingFang SC", 'Open Sans', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    height: 100vh;
+    overflow: hidden;   /* 页面滚动交给 main */
+}
+
+.page-zoom {
+    height: 100vh;
+    overflow: hidden;
+    animation: body缩放 var(--t-body-dur, 2.5s) ease-in-out var(--t-body-delay, 0s) forwards;
+}
+
+@keyframes body缩放 {
+    0%   { transform: scale(1.5); }
+    100% { transform: scale(1); }
+}
+
+body.locked {
+    pointer-events: none;
+    overflow: hidden;
+}
+
+body.locked main {
+    overflow: hidden;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+img {
+    max-width: 100%;
+    display: block;
+}
+
+/* ============================================================
+   4. 页面骨架：导航栏 / main / section / container / footer
+   ============================================================ */
+
+/* ----- 左侧导航栏 ----- */
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--nav-width);
+    height: 100vh;
+    background: var(--bg-alt);
+    border-right: 1px solid var(--border);
+    box-shadow:
+        0 0 8px var(--border),
+        0 0 20px var(--border-shadow);
+    padding: 20px;
+    z-index: 100;
+}
+
+.nav-container {
+    display: flex;
+    flex-direction: column;
+    gap: 45px;
+}
+
+.logo {
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: var(--text);
+}
+
+.nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    list-style: none;
+}
+
+.nav-links a {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    transition: color 0.2s, transform 0.2s;
+}
+
+.nav-links a:hover {
+    color: var(--accent);
+    transform: translateX(4px);
+}
+
+/* ----- 横向滚动主区域 ----- */
+main {
+    margin-left: var(--nav-width);
+    height: 100vh;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+main::-webkit-scrollbar {
+    height: 0px;
+}
+main::-webkit-scrollbar-track {
+    background: var(--bg-alt);
+}
+main::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+main::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+/* ----- 每个区块占满一屏 ----- */
+.section,
+.hero {
+    flex: 0 0 calc(100vw - var(--nav-width));
+    height: 100vh;
+    padding: 60px 40px;
+}
+
+.section {
+    overflow-y: auto;
+}
+
+.section.alt-bg {
+    background: var(--bg-alt);
+}
+
+.hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: visible;
+}
+
+/* ----- 区块内部居中容器 ----- */
+.container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* ----- 页脚 ----- */
+.footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: var(--nav-width);
+    padding: 0;
+    font-size: 0.70rem;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
+    background: var(--bg-alt);
+    z-index: 101;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.footer p {
+    white-space: nowrap;
+}
+
+/* ============================================================
+   5. 通用组件：标题 / 按钮 / 卡片 / 列表 / 画廊
+   ============================================================ */
+
+/* ----- Section 标题 ----- */
+.section h2 {
+    font-size: 1.8rem;
+    margin-bottom: 28px;
+    position: relative;
+    padding-left: 14px;
+}
+
+.section h2::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+.section h3 {
+    margin: 24px 0 12px;
+    font-size: 1.15rem;
+}
+
+/* ----- Hero 文字与按钮 ----- */
+.hero h1 {
+    font-size: 2.6rem;
+    margin-bottom: 12px;
+}
+
+.highlight {
+    color: var(--accent);
+}
+
+.subtitle {
+    color: var(--text-muted);
+    margin-bottom: 28px;
+}
+
+.hero-buttons {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.btn.primary {
+    background: var(--accent);
+    color: #fff;
+}
+.btn.primary:hover {
+    opacity: 0.85;
+}
+
+.btn.ghost {
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+.btn.ghost:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ----- 关于我 ----- */
+.about-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 28px;
+    align-items: start;
+}
+
+.avatar {
+    width: 160px;
+    height: 160px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+}
+
+.about-grid p + p {
+    margin-top: 12px;
+}
+
+/* ----- 技能 ----- */
+.skill-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.skill-list li {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* ----- 项目卡片 ----- */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 22px;
+}
+
+.card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+}
+
+.card img {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+}
+
+.card h3,
+.card p,
+.card .link {
+    padding: 0 16px;
+}
+
+.card h3 {
+    margin-top: 16px;
+}
+
+.card p {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    margin: 8px 0 14px;
+}
+
+.card .link {
+    display: inline-block;
+    padding-bottom: 16px;
+    font-size: 0.9rem;
+}
+
+/* ----- 多媒体 ----- */
+audio {
+    width: 100%;
+    max-width: 480px;
+}
+
+video {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+}
+
+.gallery img {
+    border-radius: 10px;
+    height: 160px;
+    object-fit: cover;
+}
+
+/* ----- Unity 游戏区 ----- */
+#game iframe {
+    width: 100%;
+    max-width: 1920px;
+    max-height: 1080px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: block;
+}
+
+/* ----- 联系我 ----- */
+.contact-list {
+    list-style: none;
+}
+.contact-list li {
+    margin-bottom: 10px;
+}
+
+/* ============================================================
+   6. 特效层：粒子 / 液滴 / 准星 / 开屏遮罩
+   ============================================================ */
+
+/* ----- 全屏粒子层 ----- */
+#particle-layer {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    pointer-events: none;
+    display: block;
+}
+
+/* ----- 液滴层容器 ----- */
+.hero-box {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+}
+
+.liquid-bg {
+    transform: rotate(45deg);
+    position: absolute;
+    inset: -50%;
+    z-index: 0;
+    filter: url(#goo);
+    pointer-events: none;
+}
+
+.blob {
+    position: absolute;
+    top: var(--top, 50%);
+    left: var(--left, 50%);
+    width: var(--size, 200px);
+    height: var(--size, 200px);
+    border-radius: 5%;
+    background: var(--color, var(--black));
+
+    translate: -50% -50%;
+    will-change: translate, transform, scale;
+
+    animation:
+        blobPulse var(--pulse-dur, 4s) ease-in-out var(--pulse-delay, 0s) infinite,
+        blobWobble 6s ease-in-out infinite;
+}
+
+@keyframes blobPulse {
+    0%, 100% { scale: var(--scale-min, 0.85); }
+    50%      { scale: var(--scale-max, 1.15); }
+}
+
+@keyframes blobWobble {
+    0%, 100% { border-radius: 4% 5% 5% 4% / 5% 4% 5% 5%; }
+    25%      { border-radius: 6% 4% 4% 5% / 5% 6% 4% 4%; }
+    50%      { border-radius: 4% 5% 6% 4% / 4% 5% 5% 5%; }
+    75%      { border-radius: 5% 4% 4% 6% / 6% 4% 5% 4%; }
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+}
+
+/* ----- 十字准星 ----- */
+.crosshair-h,
+.crosshair-v {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: var(--black);
+    z-index: 9997;
+    pointer-events: none;
+    will-change: transform;
+    transition:
+        transform var(--t-cross-dur, 1.2s) cubic-bezier(0.8, 0, 0.35, 1),
+        background-color 0.35s ease;
+}
+
+.crosshair-h {
+    background: linear-gradient(90deg, transparent, var(--black), transparent);
+    transform-origin: 0 50vh;
+    transform: scaleY(1);
+}
+
+.crosshair-v {
+    background: linear-gradient(180deg, transparent, var(--black), transparent);
+    transform-origin: 50vw 0;
+    transform: scaleX(1);
+}
+
+body.crosshair-hidden .crosshair-h,
+body.crosshair-hidden .crosshair-v {
+    opacity: 0;
+}
+
+body.crosshair-hover .crosshair-h,
+body.crosshair-hover .crosshair-v {
+    background: var(--text);
+}
+
+body.crosshair-active-done .crosshair-h,
+body.crosshair-active-done .crosshair-v {
+    --crosshair-transform-dur: 0s;
+}
+
+body.crosshair-active .crosshair-h {
+    transform: scaleY(var(--crosshair-h-scale));
+}
+
+body.crosshair-active .crosshair-v {
+    transform: scaleX(var(--crosshair-v-scale));
+}
+
+/* ----- 开屏：红遮罩 ----- */
+.splash-遮罩 {
+    position: fixed;
+    inset: 0;
+    background: var(--accent);
+    z-index: 9998;
+    animation:
+        maskShrink var(--t-maskShrink-dur, 1.5s) ease var(--t-maskShrink-delay, 2.8s) forwards,
+        maskFade   var(--t-maskFade-dur, 0.5s)   ease var(--t-maskFade-delay, 4.3s)   forwards;
+}
+
+@keyframes maskShrink {
+    from { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+    to   { clip-path: polygon(0 0, var(--nav-width) 0, var(--nav-width) 100%, 0 100%); }
+}
+
+@keyframes maskFade {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+
+/* ----- 开屏：渐显遮罩 ----- */
+.splash-渐显 {
+    position: fixed;
+    inset: 0;
+    background: var(--black);
+    z-index: 9999;
+    animation: splashFade var(--t-fade-dur, 0.8s) ease var(--t-fade-delay, 0s) forwards;
+}
+
+@keyframes splashFade {
+    to { opacity: 0; }
+}
+
+/* ============================================================
+   7. 响应式：移动端 / 小屏
+   ============================================================ */
+@media (max-width: 768px) {
+    /* --- 布局方向切换 --- */
+    body {
+        height: auto;
+        overflow: auto;
+    }
+
+    main {
+        margin-left: 0;
+        height: auto;
+        display: block;
+        overflow: visible;
+    }
+
+    .section,
+    .hero {
+        width: 100%;
+        height: auto;
+        min-height: auto;
+        overflow-y: visible;
+        padding: 60px 0;
+    }
+
+    .hero {
+        min-height: 70vh;
+    }
+
+    /* --- 导航栏改成顶部横排 --- */
+    .navbar {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        height: auto;
+        padding: 14px 20px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .nav-container {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .nav-links {
+        flex-direction: row;
+        gap: 14px;
+    }
+
+    .nav-links a:hover {
+        transform: none;
+    }
+
+    /* --- 页脚取消固定 --- */
+    .footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: var(--nav-width);
+        padding: 20px 0;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        border-right: 1px solid var(--border);
+        background: var(--bg);
+        z-index: 101;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    /* --- 卡片 / 内容适配 --- */
+    .about-grid {
+        grid-template-columns: 1fr;
+        text-align: center;
+    }
+
+    .avatar {
+        margin: 0 auto;
+    }
+
+    .hero h1 {
+        font-size: 2rem;
+    }
+}
