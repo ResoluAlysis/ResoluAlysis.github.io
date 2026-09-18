@@ -1,0 +1,169 @@
+/* ============================================================
+   全屏粒子层（带横向视差）
+   ============================================================ */
+
+// particles.js
+const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+(function particleLayer() {
+    const canvas = document.getElementById('particle-layer');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // 主横向滚动容器
+    const mainEl = document.querySelector('main');
+
+    /* ============ 可调参数 ============ */
+    const CONFIG = {
+        density: isMobile ? 0.00004 : 0.0002,       // 粒子密度
+        speedMin: 0.01,         // 每帧最小位移（px）
+        speedMax: 0.05,         // 每帧最大位移
+        fadeMin: 0.001,         // 淡入淡出最小速度
+        fadeMax: 0.002,         // 淡入淡出最大速度
+        color: '0, 0, 0', // 粒子 RGB，白色通用；想红就 '225, 25, 25'
+        glow: isMobile ? 0 : 3,
+    };
+
+    /* ============ 视差分层 ============
+       每个粒子按权重分配到某一层：
+       parallax 越大 → 看起来越近（跟滚动跑得越快）
+       parallax 越小 → 看起来越远（几乎不动）
+    */
+    const LAYERS = [
+        { weight: 0.5, parallax: [-0.10, 0.25], size: [0.4, 0.9], alpha: 0.35 }, // 远景
+        { weight: 0.3, parallax: [0.35, 0.60], size: [0.7, 1.3], alpha: 0.55 }, // 中景
+        { weight: 0.2, parallax: [0.70, 1.50], size: [1.5, 3.0], alpha: 0.85 }, // 近景
+    ];
+
+    let dpr = 1, W = 0, H = 0;
+    let particles = [];
+
+    /* ============ 工具 ============ */
+    const rand = (a, b) => a + Math.random() * (b - a);
+
+    function pickLayer() {
+        const r = Math.random();
+        let acc = 0;
+        for (const l of LAYERS) {
+            acc += l.weight;
+            if (r <= acc) return l;
+        }
+        return LAYERS[LAYERS.length - 1];
+    }
+
+    /* ============ 尺寸 ============ */
+    function resize() {
+        dpr = window.devicePixelRatio || 1;
+        W = window.innerWidth;
+        H = window.innerHeight;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + 'px';
+        canvas.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const target = Math.floor(W * H * CONFIG.density);
+        const diff = target - particles.length;
+        if (diff > 0) {
+            for (let i = 0; i < diff; i++) particles.push(createParticle());
+        } else if (diff < 0) {
+            particles.length = target;
+        }
+    }
+
+    /* ============ 创建粒子 ============ */
+    function createParticle() {
+        const layer = pickLayer();
+        return {
+            x: Math.random() * W,
+            y: Math.random() * H,
+            r: rand(layer.size[0], layer.size[1]),
+            vx: rand(-CONFIG.speedMax, CONFIG.speedMax),
+            vy: rand(-CONFIG.speedMax, CONFIG.speedMax),
+            opacity: Math.random(),
+            fadeSpeed: rand(CONFIG.fadeMin, CONFIG.fadeMax),
+            fadeDir: Math.random() < 0.5 ? 1 : -1,
+            parallax: rand(layer.parallax[0], layer.parallax[1]),   // ★ 视差系数
+            alphaMul: layer.alpha,
+        };
+    }
+
+    /* ============ 更新 ============ */
+    function update(p) {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < -10) p.x = W + 10;
+        if (p.x > W + 10) p.x = -10;
+        if (p.y < -10) p.y = H + 10;
+        if (p.y > H + 10) p.y = -10;
+
+        p.opacity += p.fadeSpeed * p.fadeDir;
+        if (p.opacity >= 1) { p.opacity = 1; p.fadeDir = -1; }
+        if (p.opacity <= 0) { p.opacity = 0; p.fadeDir = 1; }
+
+        p.vx += (Math.random() - 0.5) * 0.01;
+        p.vy += (Math.random() - 0.5) * 0.01;
+        p.vx = Math.max(-CONFIG.speedMax, Math.min(CONFIG.speedMax, p.vx));
+        p.vy = Math.max(-CONFIG.speedMax, Math.min(CONFIG.speedMax, p.vy));
+    }
+
+    /* ============ 绘制（★ 视差在这里） ============ */
+    function draw(p, scrollX) {
+        // 实际绘制位置 = 视口坐标 + scrollLeft × 视差系数
+        let px = p.x - scrollX * p.parallax;
+        // 环绕到视口内：处理负数也要正确
+        px = ((px % W) + W) % W;
+
+        const alpha = p.opacity * p.alphaMul;
+        const fill = `rgba(${CONFIG.color}, ${alpha})`;
+
+        if (CONFIG.glow > 0) {
+            ctx.shadowBlur = CONFIG.glow;
+            ctx.shadowColor = `rgba(${CONFIG.color}, ${alpha * 0.8})`;
+        } else {
+            ctx.shadowBlur = 0;
+        }
+        drawShape(px, p.y, p, fill);
+    }
+    function drawShape(x, y, p, fill) {
+        const r = p.r * 1.4;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r, y);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+    }
+
+    /* ============ 主循环 ============ */
+    let rafId = null;
+    function loop() {
+        // 每帧读一次当前滚动位置
+        const scrollX = mainEl ? mainEl.scrollLeft : 0;
+
+        ctx.clearRect(0, 0, W, H);
+        for (const p of particles) {
+            update(p);
+            draw(p, scrollX);
+        }
+        rafId = requestAnimationFrame(loop);
+    }
+
+    /* ============ 启动 ============ */
+    resize();
+    window.addEventListener('resize', resize);
+    loop();
+
+    /* ============ 切后台暂停 ============ */
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        } else if (!rafId) {
+            loop();
+        }
+    });
+})();
