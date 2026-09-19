@@ -15,10 +15,22 @@
         <div class="splash-遮罩"></div>
         <div class="splash-渐显"></div>
         <canvas id="particle-layer"></canvas>
+        <canvas id="ruler-bottom"></canvas>
+        <canvas id="ruler-left"></canvas>
+        <div class="ruler-marker-x"></div>
+        <div class="ruler-marker-y"></div>
+
+        <canvas id="guide-layer"></canvas>
+
+        <div class="panel scanlines scanbeam"></div>
 
         <!-- 鼠标指针 -->
         <div class="crosshair-h"></div>
         <div class="crosshair-v"></div>
+        <div class="cursor-dot"></div>
+
+        <!-- 液滴层 -->
+        <div class="liquid-bg"></div>
 
         <!-- 导航栏 -->
         <header class="navbar">
@@ -40,8 +52,6 @@
             <!-- 首页 -->
             <section id="home" class="hero">
                 <div class="container hero-box">
-                    <!-- 液滴层 -->
-                    <div class="liquid-bg"></div>
 
                     <!-- 内容层 -->
                     <div class="hero-content">
@@ -59,6 +69,18 @@
                 <div class="container">
                     <h2>关于我</h2>
                     <div>
+                        <p>
+                            test
+                        </p>
+                        <p>
+                            test
+                        </p>
+                        <p>
+                            test
+                        </p>
+                        <p>
+                            test
+                        </p>
                         <p>
                             test
                         </p>
@@ -83,10 +105,18 @@
             </section>
 
             <!-- 项目 -->
-            <section id="projects" class="section">
+            <section id="projects" class="section alt-bg">
                 <div class="container">
                     <h2>作品</h2>
                     <div class="card-grid">
+
+                        <article class="card ak-card">
+                            <div class="ak-card-inner">
+                                <img src="assets/images/_test.jpg" alt="占位符" />
+                                <h3>项目名</h3>
+                                <p>描述文字</p>
+                            </div>
+                        </article>
 
                         <article class="card">
                             <img src="assets/images/_test.jpg" alt="占位符" />
@@ -100,12 +130,7 @@
                             <p>test</p>
                             <a href="#" class="link" target="_blank">test</a>
                         </article>
-                        <article class="card">
-                            <img src="assets/images/_test.jpg" alt="占位符" />
-                            <h3>test</h3>
-                            <p>test</p>
-                            <a href="#" class="link" target="_blank">test</a>
-                        </article>
+
 
                         <!-- 重复上述模块 -->
 
@@ -146,13 +171,13 @@
                     <h2>Unity小游戏</h2>
 
 
-                    <iframe
+                    <!-- <iframe
                     src="assets/unityGame/BoomShooting/index.html"
                     width="980"
                     height="600"
                     frameborder="0"
                     allowfullscreen>
-                    </iframe>
+                    </iframe> -->
 
                     <!--
                     <div class="placeholder">
@@ -185,7 +210,10 @@
         <script src="js/timeline.js"></script>
         <script src="js/particles.js"></script>
         <script src="js/blobs.js"></script>
+        <script src="js/mosaic.js"></script>
         <script src="js/main.js"></script>
+        <script src="js/rulers.js"></script>
+        <script src="js/guides.js"></script>
 
         <svg width="0" height="0" style="position:absolute">
             <defs>
@@ -197,6 +225,24 @@
                         0 1 0 0 0
                         0 0 1 0 0
                         0 0 0 25 -10" />
+                </filter>
+
+                <!-- ★ 新增：涟漪扭曲 -->
+                <filter id="ripple-warp">
+                    <!-- 噪声：决定扭曲的形状 -->
+                    <feTurbulence
+                        type="fractalNoise"
+                        baseFrequency="0.03"
+                        numOctaves="2"
+                        seed="5"
+                        result="noise" />
+                    <!-- 位移：根据噪声把像素推走 -->
+                    <feDisplacementMap
+                        in="SourceGraphic"
+                        in2="noise"
+                        scale="0"
+                        xChannelSelector="R"
+                        yChannelSelector="G" />
                 </filter>
             </defs>
         </svg>

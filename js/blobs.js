@@ -2,18 +2,8 @@
    液滴系统 v2：用极坐标生成路径
    ============================================================ */
 
-// blobs.js 顶部
-const isMobile = window.matchMedia('(max-width: 768px)').matches;
-const CONFIG = isMobile ? BLOB_CONFIG.slice(0, 3) : BLOB_CONFIG;
-
 /**
  * 生成一条绕原点漂移的闭合路径
- * @param {number} radius   平均半径（px）
- * @param {number} wobble   半径抖动幅度（px），0 = 正圆
- * @param {number} points   采样点数，越多越平滑
- * @param {number} phase    起始角度，用来错开多个液滴
- * @param {number} lobes    抖动次数，越大越"波浪"
- * @param {number} dir    运动方向（-1反方向，看起来是逆时针）
  */
 function driftPath(radius, wobble = 0, points = 14, phase = 0, lobes = 3, dir = 1) {
     const path = [];
@@ -43,10 +33,10 @@ const BLOB_CONFIG = [
         size: 250,
         duration: 35,
         delay: 0.2,
-        pulseDur: 3,       // ★ 呼吸周期
-        pulseDelay: 0.5,       // ★ 错开起始相位
-        scaleMin: 0.85,      // ★ 最小缩到多少
-        scaleMax: 1.0,      // ★ 最大胀到多少
+        pulseDur: 3,
+        pulseDelay: 0.5,
+        scaleMin: 0.85,
+        scaleMax: 1.0,
         path: driftPath(60, 20, 20, Math.PI / 1.5, 0),
     },
     {
@@ -54,10 +44,10 @@ const BLOB_CONFIG = [
         size: 200,
         duration: 40,
         delay: 0.6,
-        pulseDur: 8,       // ★ 呼吸周期
-        pulseDelay: 0,       // ★ 错开起始相位
-        scaleMin: 0.8,      // ★ 最小缩到多少
-        scaleMax: 1.5,      // ★ 最大胀到多少
+        pulseDur: 8,
+        pulseDelay: 0,
+        scaleMin: 0.8,
+        scaleMax: 1.5,
         path: driftPath(55, 20, 20, Math.PI, 0, -1),
     },
     {
@@ -65,10 +55,10 @@ const BLOB_CONFIG = [
         size: 280,
         duration: 50,
         delay: 0,
-        pulseDur: 3.5,       // ★ 呼吸周期
-        pulseDelay: 0,       // ★ 错开起始相位
-        scaleMin: 0.85,      // ★ 最小缩到多少
-        scaleMax: 1.15,      // ★ 最大胀到多少
+        pulseDur: 3.5,
+        pulseDelay: 0,
+        scaleMin: 0.85,
+        scaleMax: 1.15,
         path: driftPath(50, 15, 16, 0, 3),
     },
     {
@@ -76,10 +66,10 @@ const BLOB_CONFIG = [
         size: 240,
         duration: 30,
         delay: 1.5,
-        pulseDur: 3.5,       // ★ 呼吸周期
-        pulseDelay: 0.2,       // ★ 错开起始相位
-        scaleMin: 0.95,      // ★ 最小缩到多少
-        scaleMax: 1.02,      // ★ 最大胀到多少
+        pulseDur: 3.5,
+        pulseDelay: 0.2,
+        scaleMin: 0.95,
+        scaleMax: 1.02,
         path: driftPath(45, 20, 16, Math.PI / 3, 4),
     },
     {
@@ -87,10 +77,10 @@ const BLOB_CONFIG = [
         size: 280,
         duration: 20,
         delay: 0.8,
-        pulseDur: 5,       // ★ 呼吸周期
-        pulseDelay: 0.4,       // ★ 错开起始相位
-        scaleMin: 0.90,      // ★ 最小缩到多少
-        scaleMax: 1.05,      // ★ 最大胀到多少
+        pulseDur: 5,
+        pulseDelay: 0.4,
+        scaleMin: 0.90,
+        scaleMax: 1.05,
         path: driftPath(35, 12, 14, Math.PI, 2),
     },
     {
@@ -98,10 +88,10 @@ const BLOB_CONFIG = [
         size: 30,
         duration: 30,
         delay: 2.2,
-        pulseDur: 5,       // ★ 呼吸周期
-        pulseDelay: 0,       // ★ 错开起始相位
-        scaleMin: 0.5,      // ★ 最小缩到多少
-        scaleMax: 1.0,      // ★ 最大胀到多少
+        pulseDur: 5,
+        pulseDelay: 0,
+        scaleMin: 0.5,
+        scaleMax: 1.0,
         path: driftPath(55, 18, 18, Math.PI / 2, 5),
     },
     {
@@ -109,10 +99,10 @@ const BLOB_CONFIG = [
         size: 100,
         duration: 30,
         delay: 0,
-        pulseDur: 3,       // ★ 呼吸周期
-        pulseDelay: 0,       // ★ 错开起始相位
-        scaleMin: 0.85,      // ★ 最小缩到多少
-        scaleMax: 1.2,      // ★ 最大胀到多少
+        pulseDur: 3,
+        pulseDelay: 0,
+        scaleMin: 0.85,
+        scaleMax: 1.2,
         path: driftPath(100, 200, 100, Math.PI, 0),
     },
     {
@@ -120,22 +110,21 @@ const BLOB_CONFIG = [
         size: 100,
         duration: 40,
         delay: 0.5,
-        pulseDur: 8,       // ★ 呼吸周期
-        pulseDelay: 0.5,       // ★ 错开起始相位
-        scaleMin: 0.8,      // ★ 最小缩到多少
-        scaleMax: 1.5,      // ★ 最大胀到多少
+        pulseDur: 8,
+        pulseDelay: 0.5,
+        scaleMin: 0.8,
+        scaleMax: 1.5,
         path: driftPath(100, 200, 100, Math.PI / 2, 0),
     },
-
     {
         top: '50%', left: '50%',
         size: 50,
         duration: 20,
         delay: 1,
-        pulseDur: 12,       // ★ 呼吸周期
-        pulseDelay: 0.5,       // ★ 错开起始相位
-        scaleMin: 0.8,      // ★ 最小缩到多少
-        scaleMax: 1.2,      // ★ 最大胀到多少
+        pulseDur: 12,
+        pulseDelay: 0.5,
+        scaleMin: 0.8,
+        scaleMax: 1.2,
         path: driftPath(100, 400, 100, Math.PI / 2, 0, -1),
     }
 ];
@@ -173,8 +162,14 @@ function buildKeyframes(path) {
 (function buildBlobs() {
     const layer = document.querySelector('.liquid-bg');
     if (!layer) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;   // 不开液滴动画
 
-    BLOB_CONFIG.forEach((b) => {
+    // ★ 变量都在 IIFE 里，不会污染全局
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const list = isMobile ? BLOB_CONFIG.slice(0, 3) : BLOB_CONFIG;
+
+    list.forEach((b) => {
         const el = document.createElement('span');
         el.className = 'blob';
         el.style.setProperty('--top', b.top);
@@ -201,7 +196,6 @@ function buildKeyframes(path) {
             anim.addEventListener('finish', () => {
                 anim.cancel();
 
-                // ★ 30% 概率翻转整条路径
                 if (Math.random() < 0.3) {
                     path = path.slice().reverse();
                     keyframes = buildKeyframes(path);

@@ -3,8 +3,10 @@ console.log("主页已加载...");
 /* ===== 开屏锁 ===== */
 document.body.classList.add("locked");
 
+window.crosshairPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
 /* ===== 读取总时长 ===== */
-const T = window.SPLASH_TIMELINE;
+const T = window.SPLASH_TIMELINE || {};
 const cross = T.cross || { delay: 4.8, duration: 1.2 };
 const TOTAL = window.SPLASH_TOTAL || 6;
 
@@ -31,10 +33,34 @@ let skipped = false;
 const skip = () => {
     if (skipped) return;
     skipped = true;
-    document.querySelectorAll(".splash-遮罩, .splash-渐显").forEach(el => el.remove());
-    document.body.classList.add("crosshair-active", "crosshair-active-done");
-    document.body.classList.remove("locked");
     console.log("开屏被跳过");
+
+    // 1. 移除遮罩
+    document.querySelectorAll(".splash-遮罩, .splash-渐显").forEach(el => el.remove());
+
+    // 2. 加快 page-zoom 的 body缩放
+    const zoomEl = document.querySelector(".page-zoom");
+    if (zoomEl) {
+        zoomEl.getAnimations().forEach((anim) => {
+            anim.updatePlaybackRate(5);
+        });
+    }
+
+    // 3. 用 class 缩短准星收缩时长（不污染 CSS 变量）
+    document.body.classList.add("crosshair-fast");
+    document.body.classList.add("crosshair-active");
+
+    // 4. 收缩跑完后去掉 fast、加上 done
+    setTimeout(() => {
+        document.body.classList.remove("crosshair-fast");
+        document.body.classList.add("crosshair-active-done");
+    }, 330);   // 0.25s + 一点余量
+
+    // 5. 解锁页面
+    document.body.classList.remove("locked");
+
+    // 6. 通知 clickRipple
+    window.dispatchEvent(new Event("bodyzoomend"));
 };
 document.addEventListener("keydown", skip, { once: true });
 document.addEventListener("click", skip, { once: true });
@@ -69,6 +95,8 @@ setTimeout(() => {
     let targetX = main.scrollLeft;
     let velocity = 0;
     let rafId = null;
+    let jumpRafId = null;   // ★ 新增：锚点跳转专用动画
+    let isSprinting = false;   // ★ 新增：是否正在冲刺跳转
 
     function step() {
         targetX += velocity;
@@ -106,6 +134,11 @@ setTimeout(() => {
                 return;
             }
 
+            if (isSprinting) {
+                e.preventDefault();   // 冲刺期间拦截滚轮，避免打断动画
+                return;
+            }
+
             const rect = main.getBoundingClientRect();
             if (e.clientX < rect.left || e.clientX > rect.right) return;
             if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
@@ -125,17 +158,90 @@ setTimeout(() => {
         { passive: false }
     );
 
-    /* 导航锚点平滑跳转 */
-    document.querySelectorAll('.nav-links a[href^="#"]').forEach((a) => {
+    /* 导航锚点平滑跳转（覆盖所有 a[href^="#"]：logo / hero 按钮 / 导航链接） */
+    document.querySelectorAll('a[href^="#"]').forEach((a) => {
         a.addEventListener("click", (e) => {
-            const el = document.querySelector(a.getAttribute("href"));
+            const href = a.getAttribute("href");
+            if (!href || href === "#") return;
+            const el = document.querySelector(href);
             if (!el) return;
+
             e.preventDefault();
-            targetX = el.offsetLeft;
-            velocity = 0;
-            if (rafId === null) rafId = requestAnimationFrame(step);
+
+            // ★ 用 relative 坐标算目标（不受 main 的 margin-left 影响）
+            const mainRect = main.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            const target = main.scrollLeft + (elRect.left - mainRect.left);
+
+            // ★ 走"加速冲刺 + 急刹车"通道
+            animateTo(target);
+
+            // targetX 同步一下，避免之后滚轮从旧位置算起
+            targetX = target;
+
+            // 淡化
+            document.body.style.transition = 'opacity 0.3s';
+            document.body.style.opacity = '0.6';
+            setTimeout(() => { document.body.style.opacity = '1'; }, 200);
         });
     });
+    /* ============================================================
+    加速冲刺 + 急刹车跳转
+    ============================================================ */
+    const SPRINT_RATIO = 0.35;   // 前 ？% 加速，后 100-？% 刹车
+    const SPRINT_POW = 3.0;    // 加速曲线陡度，越大越"推背"
+    const BRAKE_POW = 3.2;    // 刹车曲线陡度，越大越"顿"
+    const VMAX = 2800;   // 峰值速度上限（px/秒）
+    const EASE_K = 2.54;   // 本缓动曲线的峰值速度倍数（不要改）
+    let sprintToken = 0;
+
+    function animateTo(target) {
+        if (jumpRafId) { cancelAnimationFrame(jumpRafId); jumpRafId = null; }
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        velocity = 0;
+
+        isSprinting = true;
+        const myToken = ++sprintToken;   // ★ 本次动画的唯一标识
+
+        const startX = main.scrollLeft;
+        const distance = target - startX;
+
+        // 距离越远耗时越长，但峰值速度不超过 VMAX
+        const duration = Math.min(
+            2000,
+            Math.max(500, (EASE_K * Math.abs(distance) / VMAX) * 1000)
+        );
+
+        const startTime = performance.now();
+
+        function ease(t) {
+            if (t < SPRINT_RATIO) {
+                const p = t / SPRINT_RATIO;
+                return Math.pow(p, SPRINT_POW) * (1 - 1 / (1 + SPRINT_POW));
+            }
+            // 刹车段：位置连续，速度会掉一截 → 观感就是"急刹"
+            const p = (t - SPRINT_RATIO) / (1 - SPRINT_RATIO);
+            const p1 = 1 - 1 / (1 + SPRINT_POW);   // 加速段结束时的位置
+            return p1 + (1 - Math.pow(1 - p, BRAKE_POW)) * (1 - p1);
+        }
+
+        function frame(now) {
+            const t = Math.min((now - startTime) / duration, 1);
+            main.scrollLeft = startX + distance * ease(t);
+
+            if (t < 1) {
+                jumpRafId = requestAnimationFrame(frame);
+            } else {
+                main.scrollLeft = target;
+                jumpRafId = null;
+                // ★ 只有自己还是最新那次，才把 sprinting 关掉
+                if (myToken === sprintToken) {
+                    isSprinting = false;
+                }
+            }
+        }
+        jumpRafId = requestAnimationFrame(frame);
+    }
 
     function canScrollUnderCursor(el, deltaY, stopAt) {
         while (el && el !== stopAt) {
@@ -170,14 +276,14 @@ setTimeout(() => {
         const vh = window.innerHeight;
         const vw = window.innerWidth;
         const root = document.documentElement;
-        root.style.setProperty("--crosshair-h-scale", 2 / vh);
-        root.style.setProperty("--crosshair-v-scale", 2 / vw);
+        root.style.setProperty("--crosshair-h-scale", 1 / vh);
+        root.style.setProperty("--crosshair-v-scale", 1 / vw);
     }
     updateScale();
     window.addEventListener("resize", updateScale);
 
     /* ----- 缓动跟随参数 ----- */
-    const EASE = 0.12;
+    const EASE = 0.10;
 
     let mx = window.innerWidth / 2;
     let my = window.innerHeight / 2;
@@ -189,6 +295,12 @@ setTimeout(() => {
     function applyOrigin() {
         h.style.transformOrigin = `0 ${cy}px`;
         v.style.transformOrigin = `${cx}px 0`;
+
+        // ★ 暴露准星位置给 ruler-marker
+        if (window.crosshairPos) {
+            window.crosshairPos.x = cx;
+            window.crosshairPos.y = cy;
+        }
     }
 
     function step() {
@@ -252,5 +364,110 @@ setTimeout(() => {
             "a, button, .btn, .card, [role='button']"
         );
         document.body.classList.toggle("crosshair-hover", !!interactive);
+    });
+})();
+
+/* ============================================================
+   液滴层视差跟随
+   ============================================================ */
+(function syncLiquidLayer() {
+    const main = document.querySelector('main');
+    const liquidBg = document.querySelector('.liquid-bg');
+    if (!main || !liquidBg) return;
+
+    function tick() {
+        liquidBg.style.transform = `translateX(${-main.scrollLeft / 1.4}px)`;
+        requestAnimationFrame(tick);
+    }
+    tick();
+})();
+
+(function cursorDot() {
+    const dot = document.querySelector('.cursor-dot');
+    if (!dot) return;
+
+    let tx = 0, ty = 0, cx = 0, cy = 0;
+    window.addEventListener('mousemove', e => {
+        tx = e.clientX;
+        ty = e.clientY;
+    });
+    (function loop() {
+        cx += (tx - cx) * 0.2;
+        cy += (ty - cy) * 0.2;
+        dot.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
+        requestAnimationFrame(loop);
+    })();
+})();
+
+document.querySelectorAll('#about .container').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+        el.classList.remove('shine');
+        // 强制 reflow，让动画能重新触发
+        void el.offsetWidth;
+        el.classList.add('shine');
+    });
+});
+
+/* ============================================================
+   禁用文本选择 / 拖拽 / 双击选词
+   ============================================================ */
+(function disableSelection() {
+    // 禁止拖动（针对 img 和 a，即使 CSS 已经处理，JS 兜底）
+    document.addEventListener('dragstart', (e) => {
+        e.preventDefault();
+    });
+
+    // 禁止双击选中文字
+    document.addEventListener('mousedown', (e) => {
+        if (e.detail > 1) e.preventDefault();   // 只拦双击及以后
+    });
+
+    // 禁止长按弹菜单（iOS 上的兼容）
+    document.addEventListener('contextmenu', (e) => {
+        // 如果你想保留右键菜单，删掉这一段
+        // e.preventDefault();
+    });
+})();
+
+/* ============================================================
+   点击涟漪（模糊版，缩放结束后才启用）
+   ============================================================ */
+(function clickRipple() {
+    const isTouch = window.matchMedia('(hover: none)').matches;
+    if (isTouch) return;
+
+    const zoomEl = document.querySelector('.page-zoom');
+    if (!zoomEl) return;
+
+    let rippleEnabled = false;
+
+    /* ----- 监听 body 缩放动画结束 ----- */
+    zoomEl.addEventListener('animationend', (e) => {
+        if (e.animationName === 'body缩放') {
+            rippleEnabled = true;
+        }
+    });
+
+    // 兼容 skip 时手动派发的事件
+    window.addEventListener('bodyzoomend', () => {
+        rippleEnabled = true;
+    });
+
+    /* ----- 兜底：万一 animationend 没触发（比如 reduced-motion 或组件被移除）----- */
+    const bodyDur = (window.SPLASH_TIMELINE?.body?.duration ?? 2.5) * 1000;
+    setTimeout(() => { rippleEnabled = true; }, bodyDur + 200);
+
+    /* ----- 点击时判断 ----- */
+    document.addEventListener('click', (e) => {
+        if (!rippleEnabled) return;        // ★ 缩放期间不触发
+        if (e.button !== 0) return;
+
+        const el = document.createElement('div');
+        el.className = 'click-ripple';
+        el.style.left = e.clientX + 'px';
+        el.style.top = e.clientY + 'px';
+        document.body.appendChild(el);
+
+        el.addEventListener('animationend', () => el.remove(), { once: true });
     });
 })();

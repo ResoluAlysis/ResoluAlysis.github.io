@@ -2,8 +2,6 @@
    全屏粒子层（带横向视差）
    ============================================================ */
 
-// particles.js
-const isMobile = window.matchMedia('(max-width: 768px)').matches;
 
 (function particleLayer() {
     const canvas = document.getElementById('particle-layer');
@@ -15,13 +13,13 @@ const isMobile = window.matchMedia('(max-width: 768px)').matches;
 
     /* ============ 可调参数 ============ */
     const CONFIG = {
-        density: isMobile ? 0.00004 : 0.0002,       // 粒子密度
+        density: 0.0002,       // 粒子密度
         speedMin: 0.01,         // 每帧最小位移（px）
         speedMax: 0.05,         // 每帧最大位移
         fadeMin: 0.001,         // 淡入淡出最小速度
-        fadeMax: 0.002,         // 淡入淡出最大速度
+        fadeMax: 0.01,         // 淡入淡出最大速度
         color: '0, 0, 0', // 粒子 RGB，白色通用；想红就 '225, 25, 25'
-        glow: isMobile ? 0 : 3,
+        glow: 3,
     };
 
     /* ============ 视差分层 ============
