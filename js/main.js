@@ -37,6 +37,8 @@ const skip = () => {
 
     // 1. 移除遮罩
     document.querySelectorAll(".splash-遮罩, .splash-渐显").forEach(el => el.remove());
+    // ★ 顺便清掉 WELCOME
+    document.querySelector(".welcome-splash")?.remove();
 
     // 2. 加快 page-zoom 的 body缩放
     const zoomEl = document.querySelector(".page-zoom");
@@ -392,8 +394,8 @@ setTimeout(() => {
         ty = e.clientY;
     });
     (function loop() {
-        cx += (tx - cx) * 0.2;
-        cy += (ty - cy) * 0.2;
+        cx += (tx - cx) * 0.8;
+        cy += (ty - cy) * 0.8;
         dot.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
         requestAnimationFrame(loop);
     })();

@@ -39,6 +39,14 @@ textarea {
     font-display: swap;
     /* 字体加载中先用系统字体，加载完再换 */
 }
+@font-face {
+    font-family: 'Astron_数字用';
+    src: url('../assets/fonts/Astron-2.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    /* 字体加载中先用系统字体，加载完再换 */
+}
 
 
 /* ============================================================
@@ -54,9 +62,15 @@ textarea {
     --accent: #E11919;
     --border: #E13232;
     --border-shadow: #320A0A;
+    --colck: #323232;
+    
+    --crosshair-hColor:#191919;
+    --crosshair-vColor:#191919;
 
-    --mosaic-color: #323232;   /* ★ 统一的方块颜色，改这里 */
-    --band-left: 30%;                       /* 中心带左边界 */
+    --mosaic-color: #323232;
+    /* ★ 统一的方块颜色，改这里 */
+    --band-left: 30%;
+    /* 中心带左边界 */
 
     /* 布局 */
     --nav-width: 75px;
@@ -74,8 +88,37 @@ textarea {
     --t-body-dur: 2.5s;
     --t-total: 6s;
 }
-#projects{
-    --band-left: 0%; 
+
+/* ============================================================
+   浅色主题
+   ============================================================ */
+body.light {
+    /* 基础配色 */
+    --bg: #f2f2f2;
+    --bg-alt: #e5e5e5;
+    --text: #1a1a1a;
+    --text-muted: #bbbbbb;
+    --accent: #E11919;
+    --border: #cc3333;
+    --border-shadow: #f0d0d0;
+
+    /* 圆环 / 时钟 */
+    --colck: #f2f2f2;
+    --mosaic-color: #f2f2f2;
+
+    /* 准星线条颜色 */
+    --crosshair-hColor: #c8c8c8;
+    --crosshair-vColor: #c8c8c8;
+
+    /* 逐元素覆盖 */
+    --navbar-bg: rgba(0, 0, 0, 0.65);
+    --glass-bg: rgba(255, 255, 255, 0.55);
+    --splash-fade-bg: #ffffff;
+    --card-shadow: #c8c8c8;
+}
+
+#projects {
+    --band-left: 0%;
 }
 
 /* ============================================================
@@ -86,19 +129,40 @@ html {
 }
 
 body {
+    will-change: background-color;
     font-family: "HuXiaoBo", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
         "PingFang SC", 'Open Sans', 'Microsoft YaHei', sans-serif;
-    background: var(--text);
+    background: var(--bg);
     color: var(--text);
     line-height: 1.7;
     height: 100vh;
     overflow: hidden;
     /* 页面滚动交给 main */
+transition: background-color 0.1s ease, color 0.1s ease;
+}
+body,
+.navbar,
+.footer,
+main,
+.section.alt-bg,
+#about .container,
+.splash-渐显,
+.splash-遮罩,
+.digital-clock,
+.crosshair-h,
+.crosshair-v {
+    transition:
+        background-color 0.25s ease,
+        color 0.25s ease,
+        border-color 0.25s ease;
+}
+body.theme-switching .navbar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 body::before {
     content: "";
-    position: fixed;
     inset: 0;
     z-index: 10000;
     pointer-events: none;
@@ -153,7 +217,7 @@ img {
     width: var(--nav-width);
     height: 100vh;
 
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
     backdrop-filter: blur(14px) saturate(2.0) brightness(0.85);
     -webkit-backdrop-filter: blur(20px) saturate(1.6);
 
@@ -223,6 +287,39 @@ img {
     transform: translateX(4px);
 }
 
+/* ============================================================
+   主题切换按钮
+   ============================================================ */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-top: 10px;
+
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: none;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+    width: 100%;
+    justify-content: flex-start;
+}
+
+.theme-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.06);
+}
+
+.theme-toggle-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+
 /* ----- 横向滚动主区域 ----- */
 main {
     /* background-image: url("https://www.transparenttextures.com/patterns/always-grey.png"); */
@@ -279,9 +376,12 @@ main::-webkit-scrollbar-thumb:hover {
 .section.alt-bg {
     position: relative;
     overflow: visible;
-    isolation: auto;             /* ★ 去掉层叠上下文 */
-    z-index: 2;                  /* ★ 高于普通 section */
+    isolation: auto;
+    /* ★ 去掉层叠上下文 */
+    z-index: 2;
+    /* ★ 高于普通 section */
 }
+
 .mosaic-layer {
     position: absolute;
     inset: 0;
@@ -289,6 +389,7 @@ main::-webkit-scrollbar-thumb:hover {
     pointer-events: none;
     z-index: 0;
 }
+
 /* 中心实色带 */
 .mosaic-layer::before {
     content: "";
@@ -299,6 +400,7 @@ main::-webkit-scrollbar-thumb:hover {
     bottom: 0;
     background: var(--mosaic-color);
 }
+
 .mosaic-tile {
     position: absolute;
     background: var(--mosaic-color);
@@ -308,20 +410,32 @@ main::-webkit-scrollbar-thumb:hover {
     /* ★ 视差偏移：独立属性，和 transform 互不干扰 */
     translate: var(--px, 0px) 0;
 }
+
 .mosaic-tile.float {
     animation: tileFloat var(--float-dur, 6s) ease-in-out var(--float-delay, 0s) infinite alternate;
 }
+
 @keyframes tileFloat {
-    0%   { transform: translate(0, 0) rotate(0deg); }
-    100% { transform: translate(var(--dx, 8px), var(--dy, -6px)) rotate(var(--rot, 4deg)); }
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    100% {
+        transform: translate(var(--dx, 8px), var(--dy, -6px)) rotate(var(--rot, 4deg));
+    }
 }
-.section.alt-bg > .container {
+
+.section.alt-bg>.container {
     position: relative;
     z-index: 1;
 }
+
 @media (max-width: 768px) {
-    .mosaic-layer { display: none; }
+    .mosaic-layer {
+        display: none;
+    }
 }
+
 /*-----*/
 
 
@@ -331,7 +445,7 @@ main::-webkit-scrollbar-thumb:hover {
     justify-content: center;
     text-align: center;
     overflow: visible;
-    
+
     z-index: 11;
 }
 
@@ -356,7 +470,7 @@ main::-webkit-scrollbar-thumb:hover {
     font-size: 0.70rem;
     color: var(--text-muted);
     border-right: 1px solid var(--border);
-    background: var(--bg-alt);
+    background: #191919;
     z-index: 101;
 
     display: flex;
@@ -465,7 +579,7 @@ main::-webkit-scrollbar-thumb:hover {
    ============================================================ */
 #about .container {
     position: relative;
-    background: rgba(25, 25, 25, 0.45);
+    background: var(--glass-bg, rgba(25, 25, 25, 0.45));
     backdrop-filter: blur(16px) saturate(1.4);
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
     border: 1px solid rgba(225, 50, 50, 0.35);
@@ -571,7 +685,7 @@ main::-webkit-scrollbar-thumb:hover {
     overflow: hidden;
     transition: transform 0.2s, border-color 0.2s;
     /* 向右下方偏移 8px 的黑色硬阴影 */
-    box-shadow: 8px 8px 0 var(--black);
+    box-shadow: 8px 8px 0 var(--card-shadow, var(--black));
 }
 
 .card:hover {
@@ -626,13 +740,11 @@ main::-webkit-scrollbar-thumb:hover {
 
 /* 斜切角 */
 .ak-card-inner {
-    clip-path: polygon(
-        0 0,
-        100% 0,
-        100% calc(100% - 16px),
-        calc(100% - 16px) 100%,
-        0 100%
-    );
+    clip-path: polygon(0 0,
+            100% 0,
+            100% calc(100% - 16px),
+            calc(100% - 16px) 100%,
+            0 100%);
     padding: 20px;
 }
 
@@ -655,13 +767,11 @@ main::-webkit-scrollbar-thumb:hover {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: repeating-linear-gradient(
-        0deg,
-        rgba(0, 0, 0, 0.2) 0px,
-        rgba(0, 0, 0, 0.2) 1px,
-        transparent 1px,
-        transparent 4px
-    );
+    background: repeating-linear-gradient(0deg,
+            rgba(0, 0, 0, 0.2) 0px,
+            rgba(0, 0, 0, 0.2) 1px,
+            transparent 1px,
+            transparent 4px);
     opacity: 0.3;
     z-index: 2;
 }
@@ -722,8 +832,69 @@ video {
 /* ============================================================
    6. 特效层：粒子 / 液滴 / 准星 / 开屏遮罩
    ============================================================ */
+.circle {
+    position: fixed;
+    left: 50%;
+    bottom: var(--bottom, 100px);      
+    translate: calc(-50% + var(--px, 0px)) 0; 
+    width: var(--size);
+    height: var(--size);
+    border: var(--thickness, 1px) solid var(--color, var(--colck));
+    background: rgba(225, 25, 25, 0.2);
+    border-radius: 50%;
+    pointer-events: none;
 
-    /* .scanlines::after {
+    opacity: 0;
+}
+.circle-ticks {
+    position: fixed;
+    left: 50%;  
+    bottom: var(--bottom, 100px);
+
+    translate: calc(-50% + var(--px, 0px)) 0;   /* ★ 居中 + 视差 */
+    transform-origin: center;
+    will-change: translate, transform;           /* transform 留给时钟旋转 */
+
+    width: var(--size, 80vw);
+    height: var(--size, 80vw);
+    pointer-events: none;
+    z-index: var(--z, 0);
+    overflow: visible;
+
+    /* ★ 新增 */
+    opacity: 0;
+    animation: circleReveal var(--in-dur, 1.2s) ease-out var(--in-delay, 4.3s) forwards;
+}
+
+.circle-ticks line {
+    stroke: var(--colck);
+    stroke-linecap: round;
+}
+.circle-1        { --size: 90vw;}
+.circle-ticks-1  { --size: 90vw;}
+.circle-2        { --size: 80vw;}
+.circle-ticks-2  { --size: 80vw;}
+.circle-3        { --size: 70vw;}
+.circle-ticks-3  { --size: 70vw;}
+.digital-clock {
+    position: fixed;
+    left: 50%;
+    bottom: 100px;                         
+    translate: calc(-50% + var(--px, 0px)) 0;   /* ★ 居中 + 视差 */
+    font: "Astron_数字用", ui-monospace, Consolas, monospace;
+    font-size: clamp(1.2rem, 5vw, 2.5rem);
+    color: var(--colck);
+    letter-spacing: 0.2em;
+    pointer-events: none;
+    z-index: 0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+@media (max-width: 768px) {
+    .digital-clock { display: none; }
+}
+
+/* .scanlines::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -736,6 +907,66 @@ video {
         transparent 4px
     );
     }  */
+
+    /* ============================================================
+   WELCOME 逐字动画
+   ============================================================ */
+.welcome-splash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;              /* 高于其他特效，低于准星 */
+
+    font-family: "HuXiaoBo", system-ui, sans-serif;
+    font-size: clamp(12rem, 40vw, 32rem);
+    font-weight: 1000;
+    letter-spacing: 0em;
+    color: var(--text);
+
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: visible;
+}
+
+/* 单个字符 */
+.welcome-splash .char {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(80px) scale(0.8);
+    animation: charRise var(--char-appear, 0.7s) cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+    animation-delay: calc(var(--i) * var(--char-stagger, 0.12s));
+}
+
+@keyframes charRise {
+    0% {
+        opacity: 0;
+        transform: translateY(80px)
+    }
+    60% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0)
+    }
+}
+
+/* 整块向左滑出 —— 在所有字符出现完后触发 */
+.welcome-splash.leave {
+    animation: welcomeLeave var(--welcome-out-dur, 1s) cubic-bezier(0.7, 0, 0.85, 0.3) forwards;
+}
+
+@keyframes welcomeLeave {
+    0% {
+        transform: translate(-50%, -50%) translateX(0);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) translateX(-140vw) scaleX(0);
+        opacity: 0;
+    }
+}
 
 .click-ripple {
     position: fixed;
@@ -872,13 +1103,15 @@ video {
     left: var(--nav-width);
     width: calc(100vw - var(--nav-width));
     height: 100vh;
-    z-index: 9;              
+    z-index: 0;
     pointer-events: none;
     display: block;
 }
 
 @media (max-width: 768px) {
-    #guide-layer { display: none; }
+    #guide-layer {
+        display: none;
+    }
 }
 
 /* ----- 全屏粒子层 ----- */
@@ -978,7 +1211,6 @@ video {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: var(--bg);
     z-index: 9997;
     pointer-events: none;
     will-change: transform;
@@ -989,12 +1221,16 @@ video {
 
 .crosshair-h {
     /* background: linear-gradient(90deg, transparent, var(--black), transparent); */
+    
+    background-color: var(--crosshair-hColor);
     transform-origin: 0 50vh;
     transform: scaleY(1);
 }
 
 .crosshair-v {
     /* background: linear-gradient(180deg, transparent, var(--black), transparent); */
+    
+    background-color: var(--crosshair-vColor);
     transform-origin: 50vw 0;
     transform: scaleX(1);
 }
@@ -1062,8 +1298,8 @@ body.crosshair-active .crosshair-v {
 .splash-渐显 {
     position: fixed;
     inset: 0;
-    background: var(--black);
-    z-index: 9999;
+    background: var(--splash-fade-bg, var(--black));
+    z-index: 10000;
     animation: splashFade var(--t-fade-dur, 0.8s) ease var(--t-fade-delay, 0s) forwards;
 }
 

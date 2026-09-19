@@ -2,10 +2,14 @@ window.SPLASH_TIMELINE = {
   // 每个元素 = { delay: 等几秒开始, duration: 播放几秒 }
   // delay 从页面加载那一刻算起，是绝对时间
 
-  fade:       { delay: 0.2, duration: 0.8 },   // 渐显遮罩淡出
+  fade:       { delay: 0.2, duration: 1.2 },   // 渐显遮罩淡出
+  welcomeIn:  { delay: 0.8, duration: 2.0 },   // 开屏字符逐字出现 + 停留
+  welcomeOut: { delay: 1.5, duration: 1.0 },   // 开屏字符向左滑出
   maskShrink: { delay: 2.0, duration: 1.5 },   // 红遮罩缩到左侧
   maskFade:   { delay: 3.8, duration: 0.5 },   // 红遮罩淡出
   cross:      { delay: 3.0, duration: 1.2 },   // 准星收缩
+  circlesIn: { delay: 4.0, duration: 0.1, stagger: 0.2, grow: 0.05 },   // 时间圆环闪烁登场
+  //         ↑ 起始延迟  ↑ 最外圈时长  ↑ 每个之间的延迟步长  ↑ 每层时长递增
   body:       { delay: 0.0, duration: 4.5 },   // body 缩放
 };
 

@@ -118,4 +118,19 @@
             loop();
         }
     });
+
+    // 放在 guides.js 末尾
+    let visible = false;
+
+    document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) {
+        return;
+    }
+        if (e.key.toLowerCase() === 'g') {
+            visible = !visible;
+            canvas.style.opacity = visible ? '1' : '0';
+        }
+    });
 })();
+

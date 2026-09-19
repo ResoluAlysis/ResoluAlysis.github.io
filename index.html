@@ -11,7 +11,7 @@
 <body class="locked">
     <div class="page-zoom">
         <!-- 顶层元素 -->
-
+        <div class="welcome-splash">WELCOME</div>
         <div class="splash-遮罩"></div>
         <div class="splash-渐显"></div>
         <canvas id="particle-layer"></canvas>
@@ -32,6 +32,25 @@
         <!-- 液滴层 -->
         <div class="liquid-bg"></div>
 
+        <!-- 圆环 -->
+        <div class="circle circle-1"></div>
+        <div class="circle circle-2"></div>
+        <div class="circle circle-3"></div>
+
+        <!-- 秒针 -->
+        <svg class="circle-ticks circle-ticks-1" viewBox="0 0 200 200"
+            data-count="360" data-major="6" data-len-major="2" data-len-minor="1"
+            data-width-major="0.1" data-width-minor="0.1"></svg>
+        <!-- 分针 -->
+        <svg class="circle-ticks circle-ticks-2" viewBox="0 0 200 200"
+            data-count="360" data-major="6" data-len-major="3" data-len-minor="1.5"
+            data-width-major="0.2" data-width-minor="0.1"></svg>
+        <!-- 时针 -->
+        <svg class="circle-ticks circle-ticks-3" viewBox="0 0 200 200"
+            data-count="360" data-major="30" data-len-major="4" data-len-minor="2"
+            data-width-major="0.2" data-width-minor="0.2"></svg>
+        <div class="digital-clock">00:00:00</div>
+
         <!-- 导航栏 -->
         <header class="navbar">
             <div class="nav-container">
@@ -44,6 +63,11 @@
                         <li><a href="#contact">联系</a></li>
                     </ul>
                 </nav>
+
+                <!-- ★ 主题切换 -->
+                <button class="theme-toggle" type="button" aria-label="切换主题">
+                    <span class="theme-toggle-icon"></span>
+                </button>
             </div>
         </header>
 
@@ -67,7 +91,7 @@
             <!-- 关于我 -->
             <section id="about" class="section">
                 <div class="container">
-                    <h2>关于我</h2>
+                    <h2>test</h2>
                     <div>
                         <p>
                             test
@@ -193,7 +217,6 @@
                 <div class="container">
                     <h2>联系我</h2>
                     <ul class="contact-list">
-                        <li>邮箱: <a href="mailto:1937098165@qq.com">1937098165@qq.com</a></li>
                         <li>GitHub: <a href="https://github.com/resolualysis" target="_blank">ResoluAlysis</a></li>
 
                     </ul>
@@ -208,12 +231,16 @@
             </div>
         </footer>
         <script src="js/timeline.js"></script>
+        <script src="js/welcome.js"></script>
         <script src="js/particles.js"></script>
         <script src="js/blobs.js"></script>
         <script src="js/mosaic.js"></script>
         <script src="js/main.js"></script>
         <script src="js/rulers.js"></script>
         <script src="js/guides.js"></script>
+        <script src="js/colck.js"></script>
+        <script src="js/circle-parallax.js"></script>
+        <script src="js/theme-toggle.js"></script>
 
         <svg width="0" height="0" style="position:absolute">
             <defs>

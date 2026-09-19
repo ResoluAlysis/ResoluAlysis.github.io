@@ -161,6 +161,7 @@
                 gap: 200, sizeMin: 150, sizeMax: 600, jitter: 12,
                 floatMax: 140,
                 parallax: false,   // 这一块不做视差
+                color: 'var(--black)',
             },
         },
         // 想给更多容器加效果，就再加一条
