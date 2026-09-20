@@ -161,50 +161,77 @@ function buildKeyframes(path) {
    ============================================================ */
 (function buildBlobs() {
     const layer = document.querySelector('.liquid-bg');
-    if (!layer) return;
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) return;   // 不开液滴动画
+    if (!layer || !window.World) return;
 
-    // ★ 变量都在 IIFE 里，不会污染全局
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    const list = isMobile ? BLOB_CONFIG.slice(0, 3) : BLOB_CONFIG;
+    /* 建一批液滴，返回一个「全部拆掉、彻底停住」的清理函数 */
+    function build(count) {
+        const els = [];
+        const timers = [];
+        const stops = [];
 
-    list.forEach((b) => {
-        const el = document.createElement('span');
-        el.className = 'blob';
-        el.style.setProperty('--top', b.top);
-        el.style.setProperty('--left', b.left);
-        el.style.setProperty('--size', b.size + 'px');
-        el.style.setProperty('--pulse-dur', (b.pulseDur || 4) + 's');
-        el.style.setProperty('--pulse-delay', (b.pulseDelay || 0) + 's');
-        el.style.setProperty('--scale-min', b.scaleMin ?? 0.85);
-        el.style.setProperty('--scale-max', b.scaleMax ?? 1.15);
-        if (b.color) el.style.setProperty('--color', b.color);
-        layer.appendChild(el);
+        BLOB_CONFIG.slice(0, count).forEach((b) => {
+            const el = document.createElement('span');
+            el.className = 'blob';
+            el.style.setProperty('--top', b.top);
+            el.style.setProperty('--left', b.left);
+            el.style.setProperty('--size', b.size + 'px');
+            el.style.setProperty('--pulse-dur', (b.pulseDur || 4) + 's');
+            el.style.setProperty('--pulse-delay', (b.pulseDelay || 0) + 's');
+            el.style.setProperty('--scale-min', b.scaleMin ?? 0.85);
+            el.style.setProperty('--scale-max', b.scaleMax ?? 1.15);
+            if (b.color) el.style.setProperty('--color', b.color);
+            layer.appendChild(el);
+            els.push(el);
 
-        let path = b.path;
-        let keyframes = buildKeyframes(path);
+            let path = b.path;
+            let keyframes = buildKeyframes(path);
+            let anim = null;
+            let stopped = false;
 
-        function playOnce() {
-            const anim = el.animate(keyframes, {
-                duration: b.duration * 1000,
-                easing: 'linear',
-                iterations: 1,
-                fill: 'forwards',
+            /* ★ 原来的循环重播是无条件递归的：元素即使已经被移除，
+               这个动画链还会一直自我重启下去（跨断点重建时就泄漏了）。
+               现在有个 stopped 开关，清理时能真正停下来。 */
+            function playOnce() {
+                if (stopped) return;
+                anim = el.animate(keyframes, {
+                    duration: b.duration * 1000,
+                    easing: 'linear',
+                    iterations: 1,
+                    fill: 'forwards',
+                });
+
+                anim.addEventListener('finish', () => {
+                    if (anim) anim.cancel();
+                    anim = null;
+                    if (stopped) return;
+
+                    if (Math.random() < 0.3) {
+                        path = path.slice().reverse();
+                        keyframes = buildKeyframes(path);
+                    }
+                    playOnce();
+                }, { once: true });
+            }
+
+            timers.push(setTimeout(playOnce, (b.delay || 0) * 1000));
+            stops.push(() => {
+                stopped = true;
+                if (anim) anim.cancel();
             });
+        });
 
-            anim.addEventListener('finish', () => {
-                anim.cancel();
+        return function stop() {
+            timers.forEach(clearTimeout);
+            stops.forEach((fn) => fn());
+            els.forEach((el) => el.remove());
+        };
+    }
 
-                if (Math.random() < 0.3) {
-                    path = path.slice().reverse();
-                    keyframes = buildKeyframes(path);
-                }
-
-                playOnce();
-            }, { once: true });
-        }
-
-        setTimeout(playOnce, (b.delay || 0) * 1000);
+    /* ★ 断点变化时自动重建：桌面 9 颗、移动端 3 颗。
+       （原来是加载时判断一次，窗口缩到移动端后桌面那 9 颗会一直留着。） */
+    World.effect('(max-width: 768px)', function (isMobile) {
+        // 降低动效偏好：每次重建时重新问一次
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        return build(isMobile ? 3 : BLOB_CONFIG.length);
     });
 })();

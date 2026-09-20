@@ -93,43 +93,17 @@
         要让值 v 落在 90°（正下方）：-90 + v*step + R = 90
         → R = 180 - v*step
     */
-    let offset = 0;
-
+    /* ★ 这里原来每 30 分钟 fetch 一次 worldtimeapi.org 做网络对时：
+       · 那个免费接口经常挂，还会把访客 IP 交给第三方，隐私和可靠性都不划算；
+       · syncInterval 上的指数退避算了半天，setInterval 里却写死 30 分钟，
+         那段退避逻辑一次都没生效过。
+       已改为直接使用本机时间。 */
     function now() {
-        return new Date(Date.now() + offset);
+        return new Date();
     }
-
-    let syncInterval = 30 * 60 * 1000;   // 正常 30 分钟
-    let failedCount = 0;
-
-    async function syncNetworkTime() {
-        try {
-            const res = await fetch('https://worldtimeapi.org/api/ip');
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-            offset = new Date(data.datetime).getTime() - Date.now();
-            failedCount = 0;
-        } catch {
-            failedCount++;
-            // 失败次数越多，下次同步间隔越长（最多 2 小时）
-            syncInterval = Math.min(30 * 60 * 1000 * Math.pow(2, failedCount), 2 * 60 * 60 * 1000);
-        }
-    }
-
-    syncNetworkTime();
-    // 每 30 分钟再同步一次（防止长时间停留漂移）
-    setInterval(syncNetworkTime, 30 * 60 * 1000);
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            cancelAnimationFrame(clockRafId);
-            clockRafId = null;
-        } else {
-            if (!clockRafId) clockLoop();
-            syncNetworkTime();
-        }
-    });
 
     const elText = document.querySelector('.digital-clock');
+    let lastClockText = '';     // ★ 数字时钟只在秒数变化时才写 DOM
 
     function updateClock() {
         const t = now();
@@ -148,15 +122,15 @@
             const HH = String(t.getHours()).padStart(2, '0');
             const MM = String(t.getMinutes()).padStart(2, '0');
             const SS = String(t.getSeconds()).padStart(2, '0');
-            elText.textContent = `${HH}:${MM}:${SS}`;
+            const txt = `${HH}:${MM}:${SS}`;
+            if (txt !== lastClockText) {
+                lastClockText = txt;
+                elText.textContent = txt;
+            }
         }
     }
-    let clockRafId = null;
-    function clockLoop() {
-        updateClock();
-        clockRafId = requestAnimationFrame(clockLoop);
-    }
-    clockLoop();
+    /* ★ 交给 World 的公共 rAF，不再自己开一个循环 */
+    if (window.World) World.onFrame(updateClock);
 
 
 })();

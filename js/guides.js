@@ -2,13 +2,12 @@
    参考线 / 参考坐标系
    ============================================================ */
 (function guideLayer() {
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    if (isMobile) return;
-
     const canvas = document.getElementById('guide-layer');
-    if (!canvas) return;
+    if (!canvas || !window.World) return;
+    /* ★ visible 的初值是 false，这里必须同步成透明，
+       否则参考线一进页面就是显示的，G 键的状态和视觉对不上 */
+    canvas.style.opacity = '0';
     const ctx = canvas.getContext('2d');
-    const main = document.querySelector('main');
 
     /* ============ 可调参数 ============ */
     const STEP_MINOR = 250;      // 小格 50px
@@ -66,10 +65,16 @@
         }
     }
 
-    /* ============ 主循环 ============ */
-    let rafId = null;
-    function loop() {
-        const scrollX = main ? main.scrollLeft : 0;
+    /* ============ 绘制 ============
+       ★ 参考线只依赖 scrollX，本来不需要每帧重画（原来一帧一次，
+         静止时也在白算）。现在挂到 World.onScroll，只有滚动才重绘。 */
+    function draw() {
+        /* 移动端 CSS 把画布 display:none 了，此时 W/H 为 0，直接跳过。
+           原来这里靠「加载时判断一次 isMobile 就 return」，
+           窗口从移动端放大回桌面后就再也不会画了。 */
+        if (!W || !H) return;
+
+        const scrollX = World.scrollX;
 
         ctx.clearRect(0, 0, W, H);
 
@@ -101,23 +106,11 @@
             ctx.stroke();
         }
 
-        rafId = requestAnimationFrame(loop);
     }
 
     /* ============ 启动 ============ */
-    resize();
-    window.addEventListener('resize', resize);
-    loop();
-
-    /* ============ 切后台暂停 ============ */
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            cancelAnimationFrame(rafId);
-            rafId = null;
-        } else if (!rafId) {
-            loop();
-        }
-    });
+    World.onLayout(function () { resize(); draw(); });   // 注册时立刻跑一次；含字体加载完成
+    World.onScroll(draw);                                // 注册时会立刻用当前 scrollX 画一次
 
     // 放在 guides.js 末尾
     let visible = false;

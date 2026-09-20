@@ -2,8 +2,11 @@
    拼接方块背景（可复用工厂）
    ============================================================ */
 (function mosaicBackground() {
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    if (isMobile) return;
+    if (!window.World) return;
+
+    const DESKTOP = '(min-width: 769px)';
+    /* 初始值直接问一次，这样后面 onLayout 第一次调 render() 时状态就是对的 */
+    let active = window.matchMedia(DESKTOP).matches;
 
     /* ============================================================
        默认参数（每个实例可以覆盖）
@@ -20,34 +23,8 @@
         opacityMax: 1.3,     // 最内侧的最大透明度（超过1会被 clamp）
     };
 
-    /* ============================================================
-       视差管理器（全局只有一个 rAF 循环）
-       ============================================================ */
-    const parallaxTiles = [];
-    let parallaxRunning = false;
-
-    function ensureParallaxLoop() {
-        if (parallaxRunning) return;
-        parallaxRunning = true;
-
-        const main = document.querySelector('main');
-        if (!main) { parallaxRunning = false; return; }
-
-        function loop() {
-            const sx = main.scrollLeft;
-            for (const { tile, factor } of parallaxTiles) {
-                tile.style.setProperty('--px', (-sx * factor).toFixed(1) + 'px');
-            }
-            requestAnimationFrame(loop);
-        }
-        loop();
-    }
-
-    function cleanDeadTiles() {
-        for (let i = parallaxTiles.length - 1; i >= 0; i--) {
-            if (!parallaxTiles[i].tile.isConnected) parallaxTiles.splice(i, 1);
-        }
-    }
+    /* ★ 视差不再需要 JS 循环：每个方块只写一次 --parallax 系数，
+       位移由 css/style.css 里的 --scroll-x 统一算（见 js/world.js）。 */
 
     /* ============================================================
        单个实例
@@ -57,7 +34,6 @@
 
         function build() {
             section.querySelector('.mosaic-layer')?.remove();
-            cleanDeadTiles();
 
             const W = section.clientWidth;
             const H = section.clientHeight;
@@ -65,8 +41,13 @@
 
             const layer = document.createElement('div');
             layer.className = 'mosaic-layer';
+            /* color      = 色带的颜色（也就是这块 section 的"底色"）
+               tileColor  = 方块的颜色（不写就跟 color 同色，等于看不见方块） */
             if (cfg.color) {
                     layer.style.setProperty('--mosaic-color', cfg.color);
+            }
+            if (cfg.tileColor) {
+                    layer.style.setProperty('--mosaic-tile-color', cfg.tileColor);
             }
 
             // 只读左边界
@@ -104,12 +85,11 @@
                     const op = cfg.opacityMin + proximity * (cfg.opacityMax - cfg.opacityMin);
                     tile.style.opacity = Math.min(1, op).toFixed(2);
 
-                    // 视差
+                    // ★ 视差：只在这里写一次系数（位移交给 CSS）
                     if (cfg.parallax && proximity < 0.7) {
                         const base = 0.05 + (1 - proximity) * 0.01;
                         const jitter = (Math.random() - 0.5) * 0.2;
-                        const factor = Math.max(0, base + jitter);
-                        parallaxTiles.push({ tile, factor });
+                        tile.style.setProperty('--parallax', Math.max(0, base + jitter).toFixed(4));
                     }
 
                     // 漂浮
@@ -131,7 +111,7 @@
             section.insertBefore(layer, section.firstChild);
         }
 
-        return { build };
+        return { build, section };
     }
 
     /* ============================================================
@@ -161,7 +141,27 @@
                 gap: 200, sizeMin: 150, sizeMax: 600, jitter: 12,
                 floatMax: 140,
                 parallax: false,   // 这一块不做视差
-                color: 'var(--black)',
+                /* ── 配色分工 ──
+                   color     = 实色带（.mosaic-layer::before，从 --band-left 铺到右边）
+                   tileColor = 方块
+                   这里两者同色（黑），所以色带与方块是连续的一整块，
+                   方块靠近分界线时会自然融进色带里。
+
+                   底色（方块之间露出来的部分）来自 #contact 的 CSS background
+                   = var(--bg-alt)，也就是 --bg-alt 那一档；
+                   色带是压在这层底色之上的不透明覆盖物。
+                   想改成「整块都是 --bg-alt、只有方块是黑的」，
+                   把下面的 color 换成 'var(--bg-alt)' 即可。
+
+                   ── 关于方块可见度（这条注释改过一次，记下正确结论）──
+                   ✓ 感知亮度差 ΔL*：黑方块在 #191919 上 = 8.76，
+                     远高于大面积色块「刚可分辨」的阈值（≈1），属「清楚」。
+                   ✗ 不要用 WCAG 对比度(1.19) 判断：那个公式带 +0.05 的
+                     环境光抬升项，是为「亮房间里读小字」设计的，
+                     量大面积深色肌理会严重低估。
+                   要留意的场景：黑位被抬高的屏幕（漏光 LCD）或强环境光下。 */
+                color: 'var(--black)',        // 实色带 = 黑，与方块同色
+                tileColor: 'var(--black)',    // 方块 = 黑
             },
         },
         // 想给更多容器加效果，就再加一条
@@ -178,16 +178,42 @@
         });
     });
 
+    /* 去重的键必须是「真正被测量的尺寸」，不能用 window.innerWidth ——
+       字体加载完成后节内容可能超过一屏、出现内部滚动条，clientWidth 会变
+       而 innerWidth 不变（这恰恰是 onLayout 要处理的场景）。
+       同时它也让「onLayout 注册时的立刻调用」和「断点 effect 的调用」
+       不会重复重建。 */
+    let lastSig = null;
+
+    function signature() {
+        return instances
+            .map((inst) => inst.section.clientWidth + 'x' + inst.section.clientHeight)
+            .join('|');
+    }
+
     function render() {
+        if (!active) return;
+        const sig = signature();
+        if (sig === lastSig) return;
+        lastSig = sig;
         instances.forEach((inst) => inst.build());
     }
 
-    render();
-    ensureParallaxLoop();
-
-    let t = null;
-    window.addEventListener('resize', () => {
-        clearTimeout(t);
-        t = setTimeout(render, 150);
+    /* ★ 断点切换：进桌面就建、离开桌面真正拆掉。
+       CSS 里虽然把 .mosaic-layer display:none 了，但那些绝对定位的方块
+       还留在 DOM 里；窗口来回跨断点几次就会不断堆积。 */
+    World.effect(DESKTOP, function (isDesktop) {
+        active = isDesktop;
+        if (isDesktop) {
+            render();
+        } else {
+            document.querySelectorAll('.mosaic-layer').forEach(function (el) { el.remove(); });
+            /* ★ 必须清掉签名：否则「桌面 → 移动端 → 回到同样宽度的桌面」时，
+               签名看起来没变，render() 会跳过重建，而方块其实已经被拆掉了。 */
+            lastSig = null;
+        }
     });
+
+    /* 尺寸变化 / 字体加载完成 → 重算位置 */
+    World.onLayout(render);
 })();
