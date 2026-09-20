@@ -30,7 +30,7 @@ function driftPath(radius, wobble = 0, points = 14, phase = 0, lobes = 3, dir = 
 const BLOB_CONFIG = [
     {
         top: '50%', left: '50%',
-        size: 250,
+        size: 150,
         duration: 35,
         delay: 0.2,
         pulseDur: 3,
@@ -41,7 +41,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 200,
+        size: 100,
         duration: 40,
         delay: 0.6,
         pulseDur: 8,
@@ -52,7 +52,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 280,
+        size: 140,
         duration: 50,
         delay: 0,
         pulseDur: 3.5,
@@ -63,7 +63,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 240,
+        size: 120,
         duration: 30,
         delay: 1.5,
         pulseDur: 3.5,
@@ -74,7 +74,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 280,
+        size: 140,
         duration: 20,
         delay: 0.8,
         pulseDur: 5,
@@ -85,7 +85,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 30,
+        size: 20,
         duration: 30,
         delay: 2.2,
         pulseDur: 5,
@@ -96,7 +96,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 100,
+        size: 50,
         duration: 30,
         delay: 0,
         pulseDur: 3,
@@ -107,7 +107,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 100,
+        size: 50,
         duration: 40,
         delay: 0.5,
         pulseDur: 8,
@@ -118,7 +118,7 @@ const BLOB_CONFIG = [
     },
     {
         top: '50%', left: '50%',
-        size: 50,
+        size: 20,
         duration: 20,
         delay: 1,
         pulseDur: 12,
