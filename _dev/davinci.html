@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>达芬奇手稿式线条 · 试验</title>
+<style>
+    :root {
+        color-scheme: dark;
+        --ink: #d8c9a3;          /* 赭墨 */
+        --paper: #2a251c;        /* 老纸 */
+        --accent: #E11919;
+        --muted: #8b8069;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 48px 64px 96px;
+        background: var(--paper);
+        color: var(--ink);
+        font: 14px/1.7 "HuXiaoBo", system-ui, "Microsoft YaHei", sans-serif;
+        /* 纸张颗粒：一层极淡的 SVG 噪声，和站里 body::before 一个套路 */
+    }
+    body::before {
+        content: ""; position: fixed; inset: 0; z-index: -1; opacity: .16; pointer-events: none;
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='200'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20baseFrequency='0.8'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    h1 { font-size: 1.1rem; font-weight: 400; letter-spacing: .08em; margin: 0 0 4px; }
+    h2 { font-size: .8rem; font-weight: 400; letter-spacing: .14em; color: var(--muted);
+         margin: 0 0 18px; font-family: ui-monospace, Consolas, monospace; }
+    section { margin-bottom: 44px; }
+    .row { display: grid; grid-template-columns: 180px 1fr; gap: 24px; align-items: center; }
+    .tag { font-family: ui-monospace, Consolas, monospace; font-size: .72rem; color: var(--muted); }
+    svg { display: block; overflow: visible; }
+    .note { color: var(--muted); font-size: .78rem; margin-top: 10px; }
+    button { font: inherit; font-size: .75rem; color: var(--ink); background: none;
+             border: 1px solid var(--muted); padding: 6px 12px; cursor: pointer; }
+    button:hover { border-color: var(--ink); }
+</style>
+</head>
+<body>
+
+<h1>达芬奇手稿式线条 · 三个零件</h1>
+<h2>① 抖 · ② 描 · ③ 沸腾</h2>
+
+<section>
+    <div class="row">
+        <div class="tag">0 直尺线（对照）</div>
+        <svg width="620" height="40"><path id="plain" d="M0 20 H620" stroke="var(--muted)" stroke-width="1" fill="none" /></svg>
+    </div>
+    <p class="note">机械、精确 —— 这就是站里现在所有线条的味道。</p>
+</section>
+
+<section>
+    <div class="row">
+        <div class="tag">① 抖（turbulence 位移）</div>
+        <svg width="620" height="40"><path id="wobble" d="M0 20 H620" stroke="var(--ink)" stroke-width="1.1" fill="none" filter="url(#sketch)" /></svg>
+    </div>
+    <p class="note">同一条直线，过一层 feTurbulence + feDisplacementMap。filter 是静态的 —— 不逐帧重算，几乎零成本。</p>
+</section>
+
+<section>
+    <div class="row">
+        <div class="tag">② 描（dashoffset）</div>
+        <svg width="620" height="40">
+            <path id="draw" d="M0 20 H620" stroke="var(--accent)" stroke-width="1.1" fill="none" filter="url(#sketch)" />
+        </svg>
+    </div>
+    <p class="note">stroke-dasharray / dashoffset 从 0 描到满 —— 像有人用笔一格一格推出来。</p>
+</section>
+
+<section>
+    <div class="row">
+        <div class="tag">③ 沸腾（手绘动画味）</div>
+        <svg width="620" height="40">
+            <g id="boil">
+                <path d="M0 12 H620" stroke="var(--ink)" stroke-width="1" fill="none" filter="url(#sketch)" opacity=".9" />
+                <path d="M0 20 H620" stroke="var(--ink)" stroke-width="1.1" fill="none" filter="url(#sketch2)" />
+                <path d="M0 28 H620" stroke="var(--ink)" stroke-width="1" fill="none" filter="url(#sketch)" opacity=".75" />
+            </g>
+        </svg>
+    </div>
+    <p class="note">同一根线描三遍（笔压/抖动各不同）+ 每 1/8 秒整组抖 ±1px —— 就是传统二维动画里"线在呼吸"的做法。<button id="toggle">暂停/继续</button></p>
+</section>
+
+<section>
+    <div class="row">
+        <div class="tag">④ 排线（达芬奇的阴影）</div>
+        <svg width="620" height="90" id="hatchHost"></svg>
+    </div>
+    <p class="note">一堆短斜线、长度/间距/角度都带一点随机，且按顺序逐条显影 —— 手稿里的明暗就是这么做出来的。</p>
+</section>
+
+<svg width="0" height="0">
+    <defs>
+        <filter id="sketch" x="-20%" y="-200%" width="140%" height="500%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.02 0.12" numOctaves="2" seed="7" result="n" />
+            <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        <filter id="sketch2" x="-20%" y="-200%" width="140%" height="500%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.028 0.16" numOctaves="2" seed="19" result="n" />
+            <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+    </defs>
+</svg>
+
+<script>
+(function () {
+    'use strict';
+
+    /* ---------- ② 描：把线一格一格描出来 ---------- */
+    var draw = document.getElementById('draw');
+    var len = draw.getTotalLength();
+    draw.style.strokeDasharray = len;
+    draw.style.strokeDashoffset = len;
+    var t0 = null, DUR = 2600, HOLD = 900;
+    function loopDraw(now) {
+        if (t0 === null) t0 = now;
+        var t = ((now - t0) % (DUR + HOLD)) / DUR;      // 0~1 描，后面 HOLD 停着
+        draw.style.strokeDashoffset = len * (1 - Math.min(1, t));
+        requestAnimationFrame(loopDraw);
+    }
+    requestAnimationFrame(loopDraw);
+
+    /* ---------- ③ 沸腾：每 1/8 秒整组抖一下（12fps 左右） ---------- */
+    var boil = document.getElementById('boil');
+    var on = true, timer = null, k = 0;
+    var JIT = [[0, 0], [-1, 0], [1, -1], [0, 1], [1, 1], [-1, 1], [1, 0], [0, -1]];
+    function tick() {
+        if (!on) return;
+        var j = JIT[k++ % JIT.length];
+        boil.setAttribute('transform', 'translate(' + j[0] + ' ' + j[1] + ')');
+        timer = setTimeout(tick, 1000 / 8);
+    }
+    tick();
+    document.getElementById('toggle').addEventListener('click', function () {
+        on = !on;
+        if (on) tick(); else clearTimeout(timer);
+    });
+
+    /* ---------- ④ 排线：生成一批带随机的短斜线，逐条显影 ---------- */
+    var host = document.getElementById('hatchHost');
+    var NS = 'http://www.w3.org/2000/svg';
+    var W = 620, H = 90, gap = 9, len0 = 46;
+    var lines = [];
+    for (var x = 10; x < W; x += gap) {
+        var l = len0 * (0.55 + Math.random() * 0.75);
+        var y0 = 12 + Math.random() * 10;
+        var d = 'M' + x + ' ' + (y0 + l / 2).toFixed(1) + ' l' + (l * 0.62).toFixed(1) + ' ' + (-l).toFixed(1);
+        var p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('stroke', 'var(--ink)');
+        p.setAttribute('stroke-width', (0.7 + Math.random() * 0.6).toFixed(2));
+        p.setAttribute('fill', 'none');
+        p.setAttribute('opacity', (0.35 + Math.random() * 0.5).toFixed(2));
+        p.setAttribute('stroke-linecap', 'round');
+        p.setAttribute('filter', Math.random() < 0.5 ? 'url(#sketch)' : 'url(#sketch2)');
+        host.appendChild(p);
+        lines.push(p);
+    }
+    /* 逐条显影：每条自己描自己，起点按 x 排开 */
+    requestAnimationFrame(function step(now) {
+        var t = (now / 1000) % 6;                       // 6 秒一轮
+        for (var i = 0; i < lines.length; i++) {
+            var p = lines[i];
+            var l = p.getTotalLength();
+            if (!p.dataset.len) { p.dataset.len = l; p.style.strokeDasharray = l; }
+            var local = Math.max(0, Math.min(1, (t - i * 0.045) * 1.6));
+            p.style.strokeDashoffset = p.dataset.len * (1 - local);
+        }
+        requestAnimationFrame(step);
+    });
+})();
+</script>
+</body>
+</html>

@@ -43,6 +43,10 @@
         <canvas id="ruler-left" aria-hidden="true"></canvas>
         <div class="ruler-marker-x"></div>
         <div class="ruler-marker-y"></div>
+        <!-- 标题下划线：固定在导航栏右边缘、不随文字滑走，长度由 JS 写 scaleX。
+             ★ 必须放在脚本之前 —— 控件脚本在文档流里就地执行，
+               放它后面的话 querySelector 拿到 null，整段就会静默 return。 -->
+        <div class="hero-underline" aria-hidden="true"></div>
 
         <canvas id="guide-layer" aria-hidden="true"></canvas>
 
@@ -107,7 +111,7 @@
 
                     <!-- 内容层 -->
                     <div class="hero-content">
-                        <h1><span class="hero-title"><span class="highlight">ResoluAlysis</span></span></h1>
+                        <h1><span class="highlight">ResoluAlysis</span></h1>
                         <p class="subtitle">这里是 ResoluAlysis 的个人页，施工中尽情期待</p>
                         <div class="hero-buttons">
                             <a href="#projects" class="btn primary">作品集</a>
@@ -304,7 +308,8 @@
         <script src="js/blobs.js"></script>
         <script src="js/mosaic.js"></script>
         <script src="js/main.js"></script>
-        <script src="js/home-squash.js"></script>
+        <script src="js/home-underline.js"></script>
+        <script src="js/draft-layer.js"></script>
         <script src="js/rulers.js"></script>
         <script src="js/guides.js"></script>
         <script src="js/colck.js"></script>

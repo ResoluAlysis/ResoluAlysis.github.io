@@ -119,7 +119,8 @@ const cssNC = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
 (function keyframes() {
     const defined = new Set([...cssNC.matchAll(/@keyframes\s+([\w-]+)/g)].map(m => m[1]));
     const SKIP = new Set(['none', 'infinite', 'linear', 'ease', 'ease-in', 'ease-out', 'ease-in-out', 'both',
-        'forwards', 'backwards', 'paused', 'running', 'normal', 'reverse', 'alternate', 'initial', 'inherit']);
+        'forwards', 'backwards', 'paused', 'running', 'normal', 'reverse', 'alternate', 'initial', 'inherit',
+        'step-end', 'step-start']);
     const used = new Set();
     for (const m of cssNC.matchAll(/animation(?:-name)?\s*:\s*([^;}]+)[;}]/g)) {
         m[1].split(',').forEach(p => p.trim().split(/\s+/).forEach(tok => {
@@ -166,12 +167,35 @@ const cssNC = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
         /background-image:\s*radial-gradient\([^;]*var\(--halftone-color\)/.test(cssNC) &&
         /#000 0%,\s*transparent 20%,\s*transparent 80%,\s*#000 100%/.test(cssNC) &&
         !/mask-composite/.test((cssNC.match(/body::after\s*\{[\s\S]*?\n\}/) || [''])[0]));
-    ok('#home 标题：压到 0 → 由 ::after 那条 1px 线接管（先慢后快 + 降动效关掉）',
-        /#home \.hero-title\s*\{[^}]*scale:\s*1 var\(--hero-squash/.test(cssNC) &&
-        /#home h1::after\s*\{[^}]*height:\s*1px/.test(cssNC) &&
-        /--hero-line/.test(read('js/home-squash.js')) &&
-        /t \* t \* t/.test(read('js/home-squash.js')) &&
-        /prefers-reduced-motion[\s\S]*?#home \.hero-title\s*\{\s*scale:\s*none/.test(cssNC));
+    ok('下划线元素必须排在脚本之前解析（否则 JS 静默 return）',
+        html.indexOf('class="hero-underline"') < html.indexOf('js/home-underline.js') &&
+        html.indexOf('class="hero-underline"') > 0);
+    ok('制图框：四角刻线 + 标题栏（点线面 + 数字），位置全取布局令牌',
+        /\.draft-frame\s*\{[^}]*top:\s*var\(--v-inset\)/.test(cssNC) &&
+        /\.draft-frame\s*\{[^}]*left:\s*var\(--content-x\)/.test(cssNC) &&
+        /writing-mode:\s*vertical-rl/.test(cssNC) &&
+        /\.nav-container/.test(read('js/draft-layer.js')) &&
+        /\.df-corner\s*\{/.test(cssNC) &&
+        /\.df-bar\s*\{[^}]*align-self:\s*stretch/.test(cssNC) &&
+        /\.nav-container\s*\{[^}]*height:\s*100%/.test(cssNC) &&   // 没有它 flex:1 撑不满
+        /tabular-nums/.test(cssNC) &&
+        /const ENABLED = true/.test(read('js/draft-layer.js')) &&
+        /prefers-reduced-motion[\s\S]*?\.df-name::before\s*\{\s*animation:\s*none/.test(cssNC));
+    ok('media 面板红框：注入 + 左→上下一同→右（clamp 分段）+ 放慢 + 降动效隐藏',
+        /\.panel-frame\s*\{/.test(cssNC) &&
+        /scaleY\(clamp\(0, var\(--pf, 0\) \* 3, 1\)\)/.test(cssNC) &&
+        /scaleX\(clamp\(0, \(var\(--pf, 0\) - 0\.3333\) \* 3, 1\)\)/.test(cssNC) &&
+        /scaleY\(clamp\(0, \(var\(--pf, 0\) - 0\.6667\) \* 3, 1\)\)/.test(cssNC) &&
+        /const SLOW = 1\.6/.test(read('js/home-underline.js')) &&
+        /panel-frame/.test(read('js/home-underline.js')) &&
+        /prefers-reduced-motion[\s\S]*?\.panel-frame\s*\{\s*display:\s*none/.test(cssNC));
+    ok('#home 下划线：钉在导航栏边、右端被 media 容器钳住',
+        /\.hero-underline\s*\{[^}]*left:\s*var\(--nav-width\)/.test(cssNC) &&
+        /\.hero-underline\s*\{[^}]*width:\s*calc\(100vw - var\(--nav-width\)\)/.test(cssNC) &&
+        /\.hero-underline\s*\{[^}]*transform:\s*scaleX\(var\(--hero-line/.test(cssNC) &&
+        /mediaEdge/.test(read('js/home-underline.js')) &&
+        /mediaArrive/.test(read('js/home-underline.js')) &&
+        /prefers-reduced-motion[\s\S]*?\.hero-underline\s*\{\s*display:\s*none/.test(cssNC));
     ok('扫描带：外层套 profile、::before 两条带单向扫（mask-position）+ 降动效关掉',
         /\.halftone-scan\s*\{[^}]*mask-image/.test(cssNC) &&
         /\.halftone-scan::before\s*\{[\s\S]*?mask-position:\s*0 50%, 0 50%/.test(cssNC) &&

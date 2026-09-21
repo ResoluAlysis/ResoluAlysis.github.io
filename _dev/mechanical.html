@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>机械设计图式线条 · 试验</title>
+<style>
+    :root {
+        color-scheme: dark;
+        --line: #9fb0c0;          /* 图线（冷灰蓝） */
+        --thin: rgba(159, 176, 192, .45);
+        --mark: #E11919;          /* 红笔标注 */
+        --paper: #14181c;         /* 制图纸 */
+        --dim: #5d6b78;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 40px 56px 80px;
+        background: var(--paper); color: var(--line);
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    h1 { font-size: 1rem; font-weight: 400; letter-spacing: .1em; margin: 0 0 4px; }
+    h2 { font-size: .72rem; font-weight: 400; letter-spacing: .18em; color: var(--dim); margin: 0 0 26px; }
+    section { margin-bottom: 40px; }
+    .tag { font-size: .72rem; color: var(--dim); margin-bottom: 8px; }
+    svg { display: block; overflow: visible; }
+    .note { color: var(--dim); font-size: .74rem; margin: 10px 0 0; }
+    text { font: 11px ui-monospace, Consolas, monospace; fill: var(--mark); }
+</style>
+</head>
+<body>
+
+<h1>机械设计图式线条 · 零件</h1>
+<h2>精确 · 标注 · 线性</h2>
+
+<section>
+    <div class="tag">① 尺寸线：两条线从两端往中间长，箭头先落位，数字最后亮</div>
+    <svg width="620" height="70" id="dim">
+        <path d="M20 10 V60" stroke="var(--thin)" stroke-width="1" />
+        <path d="M600 10 V60" stroke="var(--thin)" stroke-width="1" />
+        <path id="dimL" d="M20 40 H310" stroke="var(--mark)" stroke-width="1" />
+        <path id="dimR" d="M600 40 H310" stroke="var(--mark)" stroke-width="1" />
+        <path d="M20 40 l9 -3.5 v7 z" fill="var(--mark)" />
+        <path d="M600 40 l-9 -3.5 v7 z" fill="var(--mark)" />
+        <text id="dimT" x="310" y="32" text-anchor="middle" opacity="0">180.00</text>
+        <path d="M310 34 V46" stroke="var(--mark)" stroke-width="1" opacity=".5" />
+    </svg>
+    <p class="note">注意：箭头是"落位"不是"长出来" —— 机械图的箭头永远先到端点；线用 linear 匀速长，不用缓动。</p>
+</section>
+
+<section>
+    <div class="tag">② 零件显影：轮廓（匀速）→ 中心线（点划线）→ 45° 剖面线逐条扫入</div>
+    <svg width="620" height="160" id="part">
+        <defs>
+            <clipPath id="partClip"><path d="M60 40 H260 A20 20 0 0 1 280 60 V120 H60 Z" /></clipPath>
+        </defs>
+        <path id="outline" d="M60 40 H260 A20 20 0 0 1 280 60 V120 H60 Z"
+              stroke="var(--line)" stroke-width="1.4" fill="none" />
+        <g clip-path="url(#partClip)" id="hatch"></g>
+        <g id="centerline" opacity="0">
+            <path d="M40 80 H300" stroke="var(--mark)" stroke-width="1"
+                  stroke-dasharray="14 5 3 5" />
+            <circle cx="170" cy="80" r="4" fill="none" stroke="var(--mark)" stroke-width="1" />
+        </g>
+        <path d="M170 80 l30 -30" stroke="var(--thin)" stroke-width="1" />
+        <text x="204" y="46" opacity=".9">R20</text>
+    </svg>
+    <p class="note">剖面线用 clipPath 裁在零件内；每条自己描自己、按 x 排开 —— 就是"被扫过去"的感觉。</p>
+</section>
+
+<section>
+    <div class="tag">③ 爆炸视图：零件沿轴线分离，虚线装配轴一直留着</div>
+    <svg width="620" height="120" id="explode">
+        <path d="M40 60 H580" stroke="var(--thin)" stroke-width="1" stroke-dasharray="4 6" />
+        <g id="e1"><rect x="120" y="42" width="70" height="36" stroke="var(--line)" stroke-width="1.3" fill="none" /></g>
+        <g id="e2"><rect x="235" y="30" width="90" height="60" stroke="var(--line)" stroke-width="1.3" fill="none" /></g>
+        <g id="e3"><circle cx="400" cy="60" r="26" stroke="var(--line)" stroke-width="1.3" fill="none" /></g>
+        <g id="e4"><rect x="470" y="38" width="60" height="44" stroke="var(--line)" stroke-width="1.3" fill="none" /></g>
+        <g id="dims" opacity="0">
+            <path d="M120 22 H190" stroke="var(--mark)" stroke-width="1" />
+            <path d="M235 12 H325" stroke="var(--mark)" stroke-width="1" />
+            <text x="120" y="16">A</text>
+            <text x="235" y="6">B</text>
+        </g>
+    </svg>
+    <p class="note">分离量用一个 0→1 的进度同时喂给 4 个零件（沿同一轴），到位停一拍再回来。</p>
+</section>
+
+<section>
+    <div class="tag">④ 扫描测量：光带横扫 + 坐标读数实时跳</div>
+    <svg width="620" height="110" id="scan">
+        <path d="M40 20 V90" stroke="var(--thin)" stroke-width="1" />
+        <path d="M580 20 V90" stroke="var(--thin)" stroke-width="1" />
+        <g id="beam">
+            <path d="M40 14 V96" stroke="var(--mark)" stroke-width="1" opacity=".85" />
+            <path d="M40 14 h44" stroke="var(--mark)" stroke-width="1" opacity=".5" />
+        </g>
+        <circle cx="300" cy="55" r="24" stroke="var(--line)" stroke-width="1.2" fill="none" />
+    </svg>
+    <p class="note" id="scanNote">X = 000.00 &nbsp; Y = 000.00</p>
+</section>
+
+<script>
+(function () {
+    'use strict';
+
+    /* ---------- ① 尺寸线：两段从外侧向中间匀速长 ---------- */
+    var dimL = document.getElementById('dimL');
+    var dimR = document.getElementById('dimR');
+    var dimT = document.getElementById('dimT');
+    var lL = dimL.getTotalLength(), lR = dimR.getTotalLength();
+    dimL.style.strokeDasharray = lL; dimR.style.strokeDasharray = lR;
+    var D1 = 1400, H1 = 1200, t0 = 0;
+    requestAnimationFrame(function step1(now) {
+        if (!t0) t0 = now;
+        var t = ((now - t0) % (D1 + H1)) / D1;
+        var p = Math.min(1, t);
+        dimL.style.strokeDashoffset = lL * (1 - p);
+        dimR.style.strokeDashoffset = lR * (1 - p);
+        dimT.setAttribute('opacity', t > 0.92 ? '1' : '0');
+        dimT.textContent = (180 * p).toFixed(2);
+        requestAnimationFrame(step1);
+    });
+
+    /* ---------- ② 零件：轮廓 → 中心线 → 剖面线逐条 ---------- */
+    var outline = document.getElementById('outline');
+    var lo = outline.getTotalLength();
+    outline.style.strokeDasharray = lo;
+    var hatch = document.getElementById('hatch');
+    var NS = 'http://www.w3.org/2000/svg';
+    var lines = [];
+    for (var x = -80; x < 320; x += 7) {
+        var y0 = -40, y1 = 200;
+        var p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', 'M' + x + ' ' + y0 + ' l' + (y1 - y0) + ' ' + (y1 - y0));
+        p.setAttribute('stroke', 'var(--thin)');
+        p.setAttribute('stroke-width', '1');
+        p.setAttribute('fill', 'none');
+        hatch.appendChild(p);
+        lines.push(p);
+    }
+    var D2 = 5200, H2 = 1400, t1 = 0;
+    requestAnimationFrame(function step2(now) {
+        if (!t1) t1 = now;
+        var t = ((now - t1) % (D2 + H2)) / D2;
+
+        outline.style.strokeDashoffset = lo * (1 - Math.min(1, t / 0.34));
+        document.getElementById('centerline').setAttribute('opacity', t > 0.34 && t < 0.95 ? '1' : '0');
+
+        for (var i = 0; i < lines.length; i++) {
+            var el = lines[i];
+            var l = el.getTotalLength();
+            if (!el.dataset.len) { el.dataset.len = l; el.style.strokeDasharray = l; }
+            var local = Math.max(0, Math.min(1, (t - 0.42 - i * 0.006) * 6));
+            el.style.strokeDashoffset = el.dataset.len * (1 - local);
+        }
+        requestAnimationFrame(step2);
+    });
+
+    /* ---------- ③ 爆炸：一个进度喂 4 个零件 ---------- */
+    var parts = [['e1', -90], ['e2', -30], ['e3', 30], ['e4', 90]];
+    var D3 = 3600, H3 = 1600, t2 = 0;
+    requestAnimationFrame(function step3(now) {
+        if (!t2) t2 = now;
+        var t = ((now - t2) % (D3 + H3)) / D3;
+        var p = t < 0.75 ? t / 0.75 : 1;                 // 分离到位后停一拍
+        p = p * p * (3 - 2 * p);
+        for (var i = 0; i < parts.length; i++) {
+            document.getElementById(parts[i][0])
+                .setAttribute('transform', 'translate(' + (parts[i][1] * p).toFixed(1) + ' 0)');
+        }
+        document.getElementById('dims').setAttribute('opacity', p > 0.7 ? '1' : '0');
+        requestAnimationFrame(step3);
+    });
+
+    /* ---------- ④ 扫描 + 读数 ---------- */
+    var beam = document.getElementById('beam');
+    var note = document.getElementById('scanNote');
+    var D4 = 2800, t3 = 0;
+    requestAnimationFrame(function step4(now) {
+        if (!t3) t3 = now;
+        var p = ((now - t3) % D4) / D4;
+        var x = 40 + 540 * p;
+        beam.setAttribute('transform', 'translate(' + x.toFixed(1) + ' 0)');
+        note.textContent = 'X = ' + x.toFixed(2).padStart(6, '0')
+                         + '   Y = ' + (55).toFixed(2).padStart(6, '0')
+                         + '   ⌀ = 48.00';
+        requestAnimationFrame(step4);
+    });
+})();
+</script>
+</body>
+</html>

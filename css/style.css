@@ -576,6 +576,127 @@ body::after {
                 mask-position: 0 -50%, 0 150%;
     }
 }
+/* ============================================================
+   制图框装饰（设计图 / 极简 / 点线面 + 数字）
+   ------------------------------------------------------------
+   点 · 四角刻线 + 推进点 + 一颗硬闪的点
+   线 · 刻线两条边 + 标题栏分隔线 + 底部推进线
+   面 · 右下角标题栏（半透明底 + 1px 框）
+   数字 · X 读数（横向滚动位置）/ 百分比 / SHEET / SCALE
+
+   位置全部取布局规格令牌（--v-inset / --gutter / --safe-b / --content-x），
+   不写死任何几何 —— 令牌一动它自己跟着走。
+   动态只订阅 World.onScroll，不额外开 rAF；常驻的只有那颗纯 CSS 闪点。
+   ★ 关掉：js/draft-layer.js 里 ENABLED 改 false。 */
+.draft-frame {
+    position: fixed;
+    top: var(--v-inset);
+    right: var(--gutter);
+    bottom: var(--safe-b);
+    left: var(--content-x);
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* 点 · 四角刻线（两条边，用 border 画） */
+.df-corner {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+}
+
+.df-tl { top: 0; left: 0; border-top: 1px solid var(--accent); border-left: 1px solid var(--accent); }
+.df-tr { top: 0; right: 0; border-top: 1px solid var(--accent); border-right: 1px solid var(--accent); }
+.df-bl { bottom: 0; left: 0; border-bottom: 1px solid var(--accent); border-left: 1px solid var(--accent); }
+.df-br { bottom: 0; right: 0; border-bottom: 1px solid var(--accent); border-right: 1px solid var(--accent); }
+
+/* 竖排进度条：插在 .nav-container 里（nav 链接之后），
+   flex: 1 让它自己撑满「链接下方 → 页脚上方」这段高度。
+   内容按 -90° 摆：布局上行列互换，文字各自竖排、从下往上读。 */
+.df-strip {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 2px 0;
+}
+
+.df-v {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.16em;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.df-name {
+    color: var(--text);
+    opacity: 0.8;
+}
+
+/* 那颗闪的点（硬闪，不渐变）；竖排下它落在文字的起端 */
+.df-name::before {
+    content: "";
+    display: block;
+    width: 4px;
+    height: 4px;
+    margin: 0 0 6px;
+    background: var(--accent);
+    animation: dfBlink 1.6s step-end infinite;
+}
+
+.df-read {
+    color: var(--accent);
+    display: flex;
+    gap: 9px;
+}
+
+@keyframes dfBlink {
+
+    0%,
+    60% {
+        opacity: 1;
+    }
+
+    61%,
+    100% {
+        opacity: 0.15;
+    }
+}
+
+/* 线 · 竖直轨道 + 自下而上的红填充 + 端点 */
+.df-bar {
+    position: relative;
+    align-self: stretch;
+    flex: 0 0 auto;
+    width: 1px;
+    background: var(--panel-line);
+}
+
+.df-bar i {
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: scaleY(0);
+    transform-origin: center bottom;
+}
+
+.df-bar b {
+    position: absolute;
+    left: -2px;
+    bottom: 0;
+    width: 5px;
+    height: 5px;
+    background: var(--accent);
+    transform: translateY(2.5px);
+}
+
+
 .page-zoom {
     height: 100vh;
     height: 100dvh;
@@ -706,6 +827,11 @@ img {
     display: flex;
     flex-direction: column;
     gap: var(--nav-gap);
+    /* ★ 给个确定高度，里面的竖排进度条（.df-strip，flex: 1）才能撑满
+       「nav 链接下方 → 页脚上方」。不加的话容器高度 = 内容高度，
+       flex-grow 没有可分配的剩余空间，那条进度条会缩成自己的内容高。
+       手机端导航栏是 height: auto，这里自然退化成 auto，无副作用。 */
+    height: 100%;
 }
 
 .logo {
@@ -1066,33 +1192,94 @@ main::-webkit-scrollbar-thumb:hover {
 }
 
 /* ----- Hero 文字与按钮 ----- */
-/* #home 的标题：靠近左侧导航栏时纵向压扁，压到 0 由下面那条真正的线接管。
+/* 标题下划线：一条**独立**的固定线，不跟着文字滑走。
    ------------------------------------------------------------
-   · 缩放只作用在 .hero-title（文字）上，不是 h1 上 ——
-     h1 自己要保持原始盒高，那条线才能用 top: 50% 稳稳落在文字的视觉中线上；
-     也正因为线不在被缩放的元素里，它永远是 1px，不会被压到看不见。
-   · --hero-squash（1 → 0）与 --hero-line（0 → 1）都由 js/home-squash.js 写。 */
-#home h1 {
-    position: relative;
+   左端永远钉在导航栏右边缘（left: --nav-width），
+   ★ 元素在 .page-zoom 里（和别的 HUD 层一起）—— 它必须排在脚本之前，
+     否则 home-underline.js 跑的时候还查不到它。开屏期间 .page-zoom 有 transform，
+     那时线是 scaleX(0) 不可见；intro-done 之后 transform 清掉，定位就回到视口。
+   最大长度一路铺到页面右侧（width: calc(100vw - --nav-width)），
+   实际长度靠 scaleX 从左边长出来（transform-origin: left，不触发重排）。
+   纵向位置由 JS 量出来写进 --hero-line-y（h1 的行盒底往上 0.45em：
+   0.5145em 正好是「行盒底 → 基线」的距离 = half-leading 0.3265 + descent 0.188，
+   字体度量见 CHANGES 里 HuXiaoBo 的 hhea 859/188）。 */
+.hero-underline {
+    position: fixed;
+    left: var(--nav-width);
+    top: var(--hero-line-y, 0px);
+    width: calc(100vw - var(--nav-width));
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(var(--hero-line, 0));
+    transform-origin: left center;
+    pointer-events: none;
+    z-index: 4;
 }
 
-#home .hero-title {
-    display: block;
-    scale: 1 var(--hero-squash, 1);
-}
-
-/* 压扁到最后接管的这条线（颜色跟站点强调色走） */
-#home h1::after {
-    content: "";
+/* ============================================================
+   media-panel 的红色包围框
+   ------------------------------------------------------------
+   由 js/home-underline.js 注入到每个 .media-panel 里 ——
+   放在面板内部，所以它跟着面板一起滚，不需要每帧重新定位。
+   一个 --pf 变量（0 → 1）用 clamp() 分三段驱动四条边：
+       --pf   0    ~ 1/3     左边  上 → 下
+       --pf   1/3  ~ 2/3     上边 + 下边 **同时** 左 → 右
+       --pf   2/3  ~ 1       右边  上 → 下（收口）
+   也就是「从左框开始，上下一起往右长，最后右框合上」。 */
+.panel-frame {
     position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.panel-frame i {
+    position: absolute;
+    display: block;
+    background: var(--accent);
+}
+
+.pf-t,
+.pf-b {
     left: 0;
     right: 0;
-    top: 50%;
-    height: 1px;
-    background: var(--accent);
-    opacity: var(--hero-line, 0);
-    pointer-events: none;
+    height: 2px;
 }
+
+.pf-l,
+.pf-r {
+    top: 0;
+    bottom: 0;
+    width: 2px;
+}
+
+/* ① 左边：自上而下 */
+.pf-l {
+    left: 0;
+    transform-origin: center top;
+    transform: scaleY(clamp(0, var(--pf, 0) * 3, 1));
+}
+
+/* ② 上边 + 下边：同时自左向右 */
+.pf-t {
+    top: 0;
+    transform-origin: left center;
+    transform: scaleX(clamp(0, (var(--pf, 0) - 0.3333) * 3, 1));
+}
+
+.pf-b {
+    bottom: 0;
+    transform-origin: left center;
+    transform: scaleX(clamp(0, (var(--pf, 0) - 0.3333) * 3, 1));
+}
+
+/* ③ 右边：自上而下收口 */
+.pf-r {
+    right: 0;
+    transform-origin: center top;
+    transform: scaleY(clamp(0, (var(--pf, 0) - 0.6667) * 3, 1));
+}
+
 
 .hero h1 {
     font-size: clamp(1.2rem, 5vw, 6rem);
@@ -2424,13 +2611,18 @@ body.intro-done .cursor-dot {
         animation: none !important;
     }
 
-    /* 跟着滚动做的变形也算动效：不压扁、也不出线 */
-    #home .hero-title {
-        scale: none;
+    /* 跟着滚动"长出来"也算动效：直接不画 */
+    .hero-underline {
+        display: none;
     }
 
-    #home h1::after {
-        opacity: 0;
+    .panel-frame {
+        display: none;
+    }
+
+    /* 制图框只留静态部分 */
+    .draft-frame .df-name::before {
+        animation: none;
     }
 
     /* ★ 例外：主题换色不是"动效"—— 它不产生位移或缩放，不会引起前庭不适，
@@ -2455,6 +2647,10 @@ body.intro-done .cursor-dot {
    7. 响应式：移动端 / 小屏
    ============================================================ */
 @media (max-width: 768px) {
+
+    .draft-frame {
+        display: none;
+    }
 
     /* --- 布局方向切换 --- */
     body {
