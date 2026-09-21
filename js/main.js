@@ -24,7 +24,7 @@ function finishIntro(log) {
     if (window.Intro) window.Intro.cancel();
     if (introFinished) return;
     introFinished = true;
-    document.querySelectorAll(".splash-遮罩, .splash-渐显, .welcome-splash, .welcome-tagline").forEach(el => el.remove());
+    document.querySelectorAll(".splash-遮罩, .splash-渐显, .splash-化开, .splash-网点, .welcome-splash, .welcome-tagline").forEach(el => el.remove());
     // ★ intro-done 让 .page-zoom 交还 transform，fixed 层才重新相对视口定位
     document.body.classList.add("crosshair-active-done", "intro-done");
     document.body.classList.remove("locked");
@@ -77,17 +77,30 @@ if (REDUCE_MOTION) {
         if (window.Intro) window.Intro.cancel();
 
         // 1. 移除遮罩
-        document.querySelectorAll(".splash-遮罩, .splash-渐显").forEach(el => el.remove());
+        document.querySelectorAll(".splash-遮罩, .splash-渐显, .splash-化开, .splash-网点").forEach(el => el.remove());
         // ★ 顺便清掉 WELCOME 和它的两行副标题
         document.querySelector(".welcome-splash")?.remove();
         document.querySelectorAll(".welcome-tagline").forEach(el => el.remove());
 
-        // 2. 加快 page-zoom 的 body缩放
+        /* 2. 整页缩放：从当前值**平滑**落到 1。
+           ★ 原来只是 updatePlaybackRate(5)：到点 body.intro-done 会把动画整个砍掉，
+             而那时缩放还在半路（约 0.85）—— 被 transform:none 一把拉到 1，就是"跳"。
+             现在改成：先量出当前缩放 → 停掉原动画 → 用 300ms 的补间落到 1，
+             等它落稳（下面的 330ms 到点）再加 intro-done，两边对齐就不会跳。 */
         const zoomEl = document.querySelector(".page-zoom");
         if (zoomEl) {
-            zoomEl.getAnimations().forEach((anim) => {
-                anim.updatePlaybackRate(5);
-            });
+            const cur = new DOMMatrixReadOnly(getComputedStyle(zoomEl).transform).a || 1;
+            zoomEl.getAnimations().forEach((anim) => anim.cancel());
+            zoomEl.style.transform = `scale(${cur})`;     // 固定住当前值，别让它弹回 1.5
+            zoomEl.animate(
+                [{ transform: `scale(${cur})` }, { transform: "scale(1)" }],
+                { duration: 300, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" }
+            ).finished.then(() => {
+                /* 动画自带 forwards 会一直压着 scale(1)；留着小尾巴无所谓，
+                   但**内联 transform 必须清掉** —— 否则它会盖住 body.intro-done
+                   那条 transform: none，.page-zoom 就一直当 fixed 子元素的包含块。 */
+                zoomEl.style.transform = "";
+            }, () => {});
         }
 
         // 3. 用 class 缩短准星收缩时长（不污染 CSS 变量）
@@ -97,9 +110,10 @@ if (REDUCE_MOTION) {
         // 4. 收缩跑完后去掉 fast、加上 done，并放行闸门
         setTimeout(() => {
             document.body.classList.remove("crosshair-fast");
+            if (zoomEl) zoomEl.style.transform = "";   // 兜底：内联 transform 一定要清干净
             document.body.classList.add("crosshair-active-done", "intro-done");
             if (window.World) World.openGate();
-        }, 330);   // 0.25s + 一点余量
+        }, 330);   // 0.25s + 一点余量（缩放补间是 300ms，落稳了再解锁）
 
         // 5. 解锁页面
         document.body.classList.remove("locked");
@@ -473,7 +487,9 @@ if (REDUCE_MOTION) {
     if (!dot || !window.World) return;
 
     /* ★ 原来自己开了一个 rAF 无限循环，鼠标不动也每帧写 transform。
-       现在挂到 World 上，并且位置稳定后就不再碰 DOM。 */
+       现在挂到 World 上，并且位置稳定后就不再碰 DOM。
+       （曾经在这里做过「点击阶段式收缩」和「开屏时当整屏红幕」，
+         两套都要抢 transform，已按需求撤掉 —— 这个模块只负责位置。） */
     let tx = window.innerWidth / 2;
     let ty = window.innerHeight / 2;
     let cx = tx, cy = ty;

@@ -19,6 +19,29 @@
 window.WorkWindow = (function () {
     'use strict';
 
+    /* ============================================================
+       ★ 总开关（当前：禁用）
+       ------------------------------------------------------------
+       false = 整个浮窗系统不启用：脚本照旧加载，但不注册任何监听、
+       点卡片 / 面板没有任何反应。想恢复就把下面这行改成 true。
+
+       关掉之后仍然存在的东西（都是惰性的，不需要清理）：
+         · index.html 里的 <dialog id="work-window">（没有 open 属性，
+           永远 display:none）；卡片上的 data-work / role="button"；
+         · css/style.css 第 8 节「浮窗」整段；
+         · data/works.js 与 World.pause/resume（只被这里用到）。
+       ============================================================ */
+    const ENABLED = false;
+
+    if (!ENABLED) {
+        /* 给外部一个同样形状的空壳，免得谁调 WorkWindow.open() 时报 undefined */
+        return {
+            open() {}, close() {},
+            ids() { return []; },
+            get isOpen() { return false; },
+            get current() { return null; },
+        };
+    }
     const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const dialog = document.getElementById('work-window');

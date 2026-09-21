@@ -78,7 +78,10 @@ textarea {
     --accent: #E11919;
     --border: #E13232;
     --border-shadow: #320A0A;
-    --halftone-color: rgba(255, 255, 255, 0.08);
+    --halftone-color: rgba(255, 255, 255, 0.1);
+    /* 「扫描带」的高度（你说的 5~10vh，取中 7vh）。
+       扫描带扫过的地方会把网点的透明度翻倍（叠两层同色点阵）。 */
+    --scan-h: 20vh;
     --colck: #666666;
 
     --crosshair-hColor:#191919;
@@ -118,6 +121,10 @@ textarea {
     /* 导航栏内部左右留白：栏本身只有 75px 宽，塞不下 --gutter */
     --nav-pad: 14px;
 
+    /* logo 与 nav 链接之间的纵向间距：跟视口高度走（1080 屏上 ≈49px）。
+       手机端导航栏是横条，那边另有 gap: 16px 覆盖，不受这里影响。 */
+    --nav-gap: clamp(20px, 4.5vh, 72px);
+
     /* HUD 边缘（刻度尺）厚度 */
     --ruler-w: 8px;
     --ruler-h: 8px;
@@ -144,21 +151,19 @@ textarea {
        颜色固定取 --bg-alt（= #media 容器的底色），所以只留透明度一个旋钮。 */
     --panel-scrim-alpha: 0.5;
 
-    /* 光学微调：logo(1.4rem) 与数字时钟(2.5rem) 字号差一倍、字体也不同，
-       盒顶严格对齐之后，字形的视觉顶边仍会差几像素。正值往下、负值往上。
-       先把两者都设 0，看到偏了再单独调这一个数。 */
+    /* 光学微调：
+       盒顶严格对齐之后，字形的视觉顶边仍会差几像素。正值往下、负值往上。       先设 0，看到偏了再调。 */
     --nudge-logo: 0px;
-    --nudge-clock: 0px;
 
-    /* 技能页正文（1rem）与 logo（1.4rem）的差：盒顶已经严格相等，但字号不同
-       → half-leading 不同 → **字迹**顶边会差 ≈ (1.4-1.0) × 0.466em ≈ 3px。
-       要「看着齐」而不是「盒顶齐」，把它设成 +3px 起步（正 = 往下）。 */
+    /* 技能页正文（1rem）与 logo（现在 1.75rem）的差：盒顶已经严格相等，但字号不同
+       → half-leading 不同 → **字迹**顶边会差 ≈ (1.75-1.0) × 0.466em ≈ 6px。
+       要「看着齐」而不是「盒顶齐」，把它设成 +6px 起步（正 = 往下）。 */
     --nudge-skills: 0px;
 
-    /* 时钟：最外圈的半径 = 屏幕高度的 80%。
+    /* 时钟：最外圈的半径 = 屏幕高度的 100%。
        元素是正方形，边长 --size = 直径 = 2 × 半径；
        SVG 里 R_OUTER = 100 / viewBox 200，所以刻度正好画在 --size/2 处。 */
-    --clock-r: 80vh;
+    --clock-r: 100vh;
 
     /* ============================================================
        开屏三行的版面规格（数字都是暂定的，改这一段就行）
@@ -262,7 +267,7 @@ textarea {
     --card-shadow: #c8c8c8;
 
     /* 半调网点：亮色主题下换成深色点 */
-    --halftone-color: rgba(0, 0, 0, 0.08);
+    --halftone-color: rgba(0, 0, 0, 0.1);
 
     /* 面板分隔线：亮色底下换成偏深的红，否则淡红在浅背景上看不见 */
     --panel-line: rgba(170, 30, 30, 0.30);
@@ -317,7 +322,6 @@ textarea {
 
 .circle,
 .circle-ticks,
-.digital-clock,
 .mosaic-tile,
 .liquid-bg {
     --px: calc(var(--scroll-x, 0) * var(--parallax, 0) * -1 * 1px);
@@ -372,7 +376,6 @@ main,
 #about .container,
 .splash-渐显,
 .splash-遮罩,
-.digital-clock,
 .crosshair-h,
 .crosshair-v,
 /* ---- 以下本轮补齐 ---- */
@@ -407,6 +410,23 @@ body.theme-switching .click-ripple {
     -webkit-backdrop-filter: none;
 }
 
+/* ----- 路径 A（View Transitions）期间：把逐元素过渡临时关掉 -----
+   新快照是在改动之后**立刻**拍的，而 CSS 过渡那一刻还停在第 0 帧 ——
+   不关的话，交叉淡入拍到的还是旧颜色，观感会变成「先不动、最后突然变色」。
+   这条只活 --theme-dur 那么久，期间整页本来就是一张快照，看不出副作用。 */
+html.theme-vt *,
+html.theme-vt *::before,
+html.theme-vt *::after {
+    transition: none !important;
+}
+
+/* 交叉淡入的时长交给 --theme-dur（默认 0.25s ease 比换色快，会显得「秒切」） */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: var(--theme-dur);
+    animation-timing-function: var(--theme-ease);
+}
+
 body::before {
     content: "";
     /* ★ 必须定位且有尺寸：否则伪元素是 0×0 的 inline 盒子，
@@ -424,39 +444,138 @@ body::before {
 body::after {
     content: "";
     position: fixed;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
+    /* ★ 正好一屏。原来是 200%×200% + top/left:-50% + rotate(45deg)：
+       元素一转，里面任何「竖直」渐变都会跟着变斜，而这块要做**视口坐标**
+       的上下分布，所以取消旋转、收成一屏。 */
+    inset: 0;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
     z-index: -1;
 
-    /* ★ 用「纯色 + mask 切点阵」，不再用「带颜色的 radial-gradient」。
-       两者视觉等价（点的大小/间距都不变），但主题切换时的代价差一个量级：
-         · 渐变的颜色一变 -> 浏览器要重新栅格化整张图案；
-           而这是一块 200% × 200% 的全屏元素，于是每帧重绘全屏 -> 掉帧。
-         · 纯色 + mask  -> mask 是死的、可以复用，只改一次填充色。
-       所以这里把颜色挪到 background-color、形状挪到 mask。 */
-    background-color: var(--halftone-color);
-    -webkit-mask-image: radial-gradient(
+    /* 网点画在**背景**上，竖直分布交给 **mask** —— 只有一层 mask，
+       不依赖 mask-composite（多层 mask 求交在第一层 + 初始背景上的行为
+       各浏览器不一致，之前就是这么丢过一次）。 */
+    background-image: radial-gradient(
         circle,
-        #000 var(--halftone-dot, 1px),
+        var(--halftone-color) var(--halftone-dot, 1px),
         transparent calc(var(--halftone-dot, 1px) + 0.5px)
     );
-            mask-image: radial-gradient(
-        circle,
-        #000 var(--halftone-dot, 1px),
-        transparent calc(var(--halftone-dot, 1px) + 0.5px)
-    );
-    -webkit-mask-size: var(--halftone-size, 5px) var(--halftone-size, 5px);
-            mask-size: var(--halftone-size, 5px) var(--halftone-size, 5px);
-    -webkit-mask-repeat: repeat;
-            mask-repeat: repeat;
+    background-size: var(--halftone-size, 5px) var(--halftone-size, 5px);
+    background-repeat: repeat;
 
-    transform: rotate(45deg);
+    /* 上下两条带：0% 不透明 → 20% 透明；80% 透明 → 100% 不透明。
+       一条 4 停靠点的渐变就够，不需要「两条带 + 并集」。 */
+    -webkit-mask-image: linear-gradient(to bottom,
+            #000 0%,
+            transparent 20%,
+            transparent 80%,
+            #000 100%);
+            mask-image: linear-gradient(to bottom,
+            #000 0%,
+            transparent 20%,
+            transparent 80%,
+            #000 100%);
+    -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+            mask-size: 100% 100%;
+
+    /* ★ 呼吸 / 扫描不在这层做 —— 见下面的 .halftone-scan：
+       那层叠上来就是「把这一带的网点提亮一倍」。 */
 }
 
 
+
+
+/* ============================================================
+   网点的「扫描带」
+   ------------------------------------------------------------
+   目的：从 50% 那条中线不断向上、向下各「发射」一条高度
+         --scan-h（5~10vh）的扫描区域；扫过的地方网点被**再叠一层同色点阵**，
+         透明度就翻倍（0.08 → 约 0.15）。
+
+   为什么是两层（嵌套 mask）：
+     ① 扫描只能作用在「本来就有网点的地方」（上下两条带），否则页面中间
+        会凭空冒出一排点 —— 这是两次 mask 的**交集**；
+     ② 交集不能用 mask-composite（多层 mask 求交各浏览器不靠谱），
+        但**父子 mask 天然相乘**：外层管「哪里有点」，::before 管「扫到哪」，
+        两个都通过才画得出来。所以结构是 .halftone-scan + ::before。
+
+   走法（不做往复）：
+     mask-size 固定 100% × --scan-h，只动 mask-position 的 Y：
+       上行带   0 50%  →  0 -50%   （从居中出发，一路出顶）
+       下行带   0 50%  →  0 150%   （从居中出发，一路出底）
+     两条带用 mask 默认的 add（并集）合成 —— 又一次绕开 composite。
+     ★ 起点在 50%（那里本来没有网点）→ 出场时看不见；
+       扫出上下带之后同样看不见 → 循环回起点没有接缝。
+   ============================================================ */
+.halftone-scan {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+
+    /* 外层：和 body::after 一模一样的上下带 profile（只留「有点的地方」） */
+    -webkit-mask-image: linear-gradient(to bottom,
+            #000 0%,
+            transparent 20%,
+            transparent 80%,
+            #000 100%);
+            mask-image: linear-gradient(to bottom,
+            #000 0%,
+            transparent 20%,
+            transparent 80%,
+            #000 100%);
+    -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+            mask-size: 100% 100%;
+}
+
+.halftone-scan::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+
+    /* 同色同尺寸的点阵 —— 叠在 body::after 上就是「透明度翻倍」 */
+    background-image: radial-gradient(
+        circle,
+        var(--halftone-color) var(--halftone-dot, 1px),
+        transparent calc(var(--halftone-dot, 1px) + 0.5px)
+    );
+    background-size: var(--halftone-size, 5px) var(--halftone-size, 5px);
+    background-repeat: repeat;
+
+    /* 两条软边扫描带（上、下各一条），靠 mask 默认的 add 合成 */
+    -webkit-mask-image:
+        linear-gradient(to bottom, transparent 0%, #000 20%, #000 70%, transparent 100%),
+        linear-gradient(to bottom, transparent 0%, #000 20%, #000 70%, transparent 100%);
+            mask-image:
+        linear-gradient(to bottom, transparent 0%, #000 20%, #000 70%, transparent 100%),
+        linear-gradient(to bottom, transparent 0%, #000 20%, #000 70%, transparent 100%);
+    -webkit-mask-repeat: no-repeat, no-repeat;
+            mask-repeat: no-repeat, no-repeat;
+    -webkit-mask-size: 100% var(--scan-h, 7vh), 100% var(--scan-h, 7vh);
+            mask-size: 100% var(--scan-h, 7vh), 100% var(--scan-h, 7vh);
+    -webkit-mask-position: 0 50%, 0 50%;
+            mask-position: 0 50%, 0 50%;
+
+    /* 周期 = 扫一趟的时间；linear + infinite = 不停单向扫，不往复 */
+    animation: halftoneScan 12s linear infinite;
+}
+
+@keyframes halftoneScan {
+    from {
+        -webkit-mask-position: 0 50%, 0 50%;
+                mask-position: 0 50%, 0 50%;
+    }
+
+    to {
+        -webkit-mask-position: 0 -50%, 0 150%;
+                mask-position: 0 -50%, 0 150%;
+    }
+}
 .page-zoom {
     height: 100vh;
     height: 100dvh;
@@ -464,7 +583,8 @@ body::after {
     /* ★ fill-mode 用 both 而不是 forwards：开屏在等字体期间动画是暂停的，
        此时需要 backwards 填充先把 0% 的 scale(1.5) 顶上去，
        否则会先渲染 scale(1)、开播那一刻突然跳到 1.5。 */
-    animation: body缩放 var(--t-body-dur, 2.5s) ease-in-out var(--t-body-delay, 0s) both;
+    /* 每段的曲线写在关键帧里，这里的 linear 只是"没写时的兜底" */
+    animation: body缩放 var(--t-body-dur, 4.5s) linear var(--t-body-delay, 0s) both;
 }
 
 /* ★ 开屏结束后必须把 transform 清掉。
@@ -483,9 +603,26 @@ body.intro-done .page-zoom {
 
 /* 开屏期间的「动画停表」规则放在本文件最后 —— 见文件末尾的说明。 */
 
+/* 开屏时整页的缩放。分界点的百分比 = 秒数 / --t-body-dur（现在是 4.5s）：
+     0%     → 62.22%   2.00 → 1.10   （0 → 2.8s，红幕开始移动那一刻）
+     62.22% → 80%      1.10 → 1.30   （2.8 → 3.6s）
+     80%    → 100%     1.30 → 1.00   （3.6 → 4.5s，开屏结束）
+   ★ 这几个数是你手调过的。keyframe 的百分比不能用 var()，所以改了
+     js/timeline.js 里的时长之后，要回来按「秒数 / 总时长」重算。
+   ★ 每段自己的 animation-timing-function 写在**这一段的起点**上。 */
 @keyframes body缩放 {
     0% {
-        transform: scale(1.5);
+        transform: scale(2);
+        animation-timing-function: cubic-bezier(0.25, 0.8, 0.4, 1);
+    }
+
+    62.22% {
+        transform: scale(1.1);
+        animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+    }
+    70% {
+        transform: scale(1.3);
+        animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
     }
 
     100% {
@@ -533,7 +670,7 @@ img {
     box-shadow:
         0 0 8px var(--border),
         0 0 20px var(--border-shadow);
-    /* ★ 顶部对齐线：与数字时钟、正文首行共用 --v-inset，三者盒顶落在同一条线上 */
+    /* ★ 顶部对齐线：logo 与正文首行共用 --v-inset（数字时钟已移除） */
     padding: calc(var(--v-inset) + var(--nudge-logo)) var(--nav-pad);
     z-index: 100;
 }
@@ -568,12 +705,12 @@ img {
 .nav-container {
     display: flex;
     flex-direction: column;
-    gap: 45px;
+    gap: var(--nav-gap);
 }
 
 .logo {
     font-weight: 700;
-    font-size: 1.4rem;
+    font-size: 1.75rem;
     color: var(--text);
 }
 
@@ -587,7 +724,7 @@ img {
 .nav-links a {
     display: block;
     color: var(--text-muted);
-    font-size: 0.95rem;
+    font-size: 1.15rem;
     transition: color 0.2s, transform 0.2s;
 }
 
@@ -627,6 +764,26 @@ img {
     line-height: 1;
 }
 
+/* ★ 主题按钮贴到导航栏顶端：用绝对定位挪出文档流，**不要**去改 .navbar 的 padding ——
+   那会顺带把 logo 距页面顶端的距离（--v-inset + --nudge-logo）一起改掉。
+   绝对定位的包含块是 .navbar 的 padding box（= 边框内侧），所以 top/left/right: 0
+   就是贴着导航栏的上、左、右三条边，不受它自己的 padding 影响。
+   只做桌面 —— 手机上导航栏是横条，按钮还在流里跟在链接后面。 */
+@media (min-width: 769px) {
+    .theme-toggle {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        margin: 0;
+        border-radius: 0;
+        /* 贴到三条边上之后，上/左/右那三条边框会和导航栏自己的边线叠成双线 */
+        border-top: 0;
+        border-left: 0;
+        border-right: 0;
+    }
+}
+
 /* ----- 横向滚动主区域 ----- */
 main {
     /* background-image: url("https://www.transparenttextures.com/patterns/always-grey.png"); */
@@ -658,13 +815,44 @@ main::-webkit-scrollbar-thumb:hover {
 }
 
 /* ----- 每个区块占满一屏 ----- */
+/* ----- 每个区块占满一屏（高度锁死、宽度可以随内容长）-----
+   ------------------------------------------------------------
+   规格：内容可以把这一节**横向**撑长（撑出来的部分交给 main 横滚），
+        但**永远不能把高度撑高**。
+
+   高度锁死 = height / min-height / max-height 三件套都写 100dvh：
+     · 只写 height —— 以后谁加一句 height: auto、或者父级的 align 一改，
+       就可能被内容顶高；
+     · 只写 min-height —— flex 项的「内容最小尺寸」会把它顶穿；
+     · 只写 max-height —— 内容照样会把盒子撑到 max 那一条线。
+     三个一起写，盒子在任何内容下都停在 100dvh。
+
+   宽度放开 = width: max-content + min-width: calc(100vw - nav)：
+     · 内容是窄的（.container 上限 960px）→ min-width 生效，每节仍正好一屏；
+     · 内容比一屏还宽（#media 的四只面板 = 112vw）→ 这一节自己变宽。
+     这就是「内容可以横向拉长它」。
+
+   ★ flex 必须是 0 0 auto，不能有 shrink。总宽超过 main 时，收缩会让每节
+     被压窄（内容被挤变形）；这里要的是「节不变形、让 main 横滚」。
+
+   ★ 高度锁死之后，超出一屏的内容去哪儿？由各节自己的 overflow 决定：
+       overflow-y: auto  → 在这一屏里滚（#about / #skills 现在是这个）
+       overflow: visible → 溢出被 main 的 overflow-y: hidden 裁掉
+                           （.section.alt-bg 为了马赛克色带能外溢，是 visible）
+     哪一节要写长内容，给它补一句 overflow-y: auto 就行。 */
 .section,
 .hero {
-    flex: 0 0 calc(100vw - var(--nav-width));
+    flex: 0 0 auto;
+    width: max-content;
+    min-width: calc(100vw - var(--nav-width));
     height: 100vh;
     height: 100dvh;
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
     /* ★ 正文距视口顶 / 底各留 --v-inset（默认 12vh；要 10vh 或 15vh 就改那一个数）。
-       底边再让开刻度尺的厚度：--safe-b = --ruler-h + --v-inset。 */
+       底边再让开刻度尺的厚度：--safe-b = var(--ruler-h) + var(--v-inset)。 */
     padding: var(--v-inset) var(--gutter) var(--safe-b);
 }
 
@@ -691,10 +879,20 @@ main::-webkit-scrollbar-thumb:hover {
         但字号不同 → half-leading 不同 → 字迹顶边会差 ≈ (1.4−1.0) × 0.466em ≈ 3px
         （对齐目标是左上角的 logo，1.4rem）。用 translate 不用 margin：
         不参与布局，不会把 section 撑高。 */
-/* ★ 这一节得能滚：.section.alt-bg 把 overflow 改回了 visible，散文一长
-   （超过 100dvh 那条带子）下半截就会被 body 的 overflow:hidden 吃掉、滚不到。 */
-#skills {
-    overflow-y: auto;
+/* ★ 滚的是**正文列**，不是这一节。
+   ------------------------------------------------------------
+   为什么不能让 section 自己滚：mosaic.js 的 CONFIG 里 #skills 也挂了一层
+   .mosaic-layer（gap 160 / sizeMax 500 / floatMax 100）。方块是绝对定位，
+   最后一行方块的中心就落在节底那条线上 —— 半径最大 250px、再加 100px 漂浮位移，
+   最远能掉到节底下方四五百 px。
+   只要 section 成了滚动容器，这些**装饰性溢出**就会被算进可滚动区域：
+   于是你能在这一节里上下滚，看着像「内容高过 100vh」，其实只是方块掉到节外了。
+   （顺带：overflow-y: auto 会把 overflow-x 也算成 auto，左右方向同理。）
+   所以整节保持 .section.alt-bg 给的 overflow: visible（不滚也不裁），
+   把滚动交给这 960px 的正文列 —— 它里面没有任何装饰。 */
+#skills .container {
+    max-height: 100%;     /* 上限 = section 的内容盒（100dvh − 上下留白） */
+    overflow-y: auto;     /* 真写长了就在这里滚：既不会把节撑高，也不会被裁掉 */
 }
 
 #skills .skills-text {
@@ -868,6 +1066,34 @@ main::-webkit-scrollbar-thumb:hover {
 }
 
 /* ----- Hero 文字与按钮 ----- */
+/* #home 的标题：靠近左侧导航栏时纵向压扁，压到 0 由下面那条真正的线接管。
+   ------------------------------------------------------------
+   · 缩放只作用在 .hero-title（文字）上，不是 h1 上 ——
+     h1 自己要保持原始盒高，那条线才能用 top: 50% 稳稳落在文字的视觉中线上；
+     也正因为线不在被缩放的元素里，它永远是 1px，不会被压到看不见。
+   · --hero-squash（1 → 0）与 --hero-line（0 → 1）都由 js/home-squash.js 写。 */
+#home h1 {
+    position: relative;
+}
+
+#home .hero-title {
+    display: block;
+    scale: 1 var(--hero-squash, 1);
+}
+
+/* 压扁到最后接管的这条线（颜色跟站点强调色走） */
+#home h1::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--accent);
+    opacity: var(--hero-line, 0);
+    pointer-events: none;
+}
+
 .hero h1 {
     font-size: clamp(1.2rem, 5vw, 6rem);
     margin-bottom: 12px;
@@ -1446,7 +1672,7 @@ video {
        所以刻度画在「半径 = --size / 2」处。
      · 圆心用 left:0 + top:0 + translate(-50%,-50%) 钉在视口 (0,0)，
        于是可见部分正好是右下那一象限 —— 一条四分之一圆弧。
-     · 半径改由屏幕高度决定（--clock-r，默认 80vh），不再用 vw：
+     · 半径改由屏幕高度决定（--clock-r，默认 100vh），不再用 vw：
        锚在左上角时，弧的观感本来就该跟高度走。
      · 顺带一提：16:9 屏幕上 45vw 与 80vh 数值恰好相等，
        所以尺寸观感不变，换个宽高比才会看出区别。
@@ -1457,7 +1683,7 @@ video {
     top: 0;
     bottom: auto;                                   /* 覆盖原来的 bottom: 10vh */
     translate: calc(-50% + var(--px, 0px)) -50%;    /* ★ 圆心 = 视口左上角 + 视差 */
-    --size: calc(var(--clock-r, 80vh) * var(--k, 1) * 2);
+    --size: calc(var(--clock-r, 100vh) * var(--k, 1) * 2);
     width: var(--size);
     height: var(--size);
     border: var(--thickness, 1px) solid var(--color, var(--colck));
@@ -1475,7 +1701,7 @@ video {
     transform-origin: center;                       /* transform(rotate) 绕自身中心 = 绕圆心 */
     will-change: translate, transform;
 
-    --size: calc(var(--clock-r, 80vh) * var(--k, 1) * 2);
+    --size: calc(var(--clock-r, 100vh) * var(--k, 1) * 2);
     width: var(--size);
     height: var(--size);
     pointer-events: none;
@@ -1506,48 +1732,11 @@ video {
    --parallax = 视差系数：最外圈跑得慢（感觉最远），内圈跑得快 */
 .circle-1        { --k: 1;      --parallax: 0.08; }
 .circle-ticks-1  { --k: 1;      --parallax: 0.08; }
-.circle-2        { --k: 0.8889; --parallax: 0.16; }
-.circle-ticks-2  { --k: 0.8889; --parallax: 0.16; }
-.circle-3        { --k: 0.7778; --parallax: 0.35; }
-.circle-ticks-3  { --k: 0.7778; --parallax: 0.35; }
-.digital-clock {
-    position: fixed;
-    /* ★ 跟着圆环一起锚到页面左上角。
-       两个偏移单独抽成变量方便微调 —— 默认值刻意躲开了左侧导航栏
-       （--nav-width = 75px）和左侧刻度尺（40px），否则读数会被压在它们下面。
-       想还原成「底部居中」就把下面四行换成：
-           left: 50%; top: auto; bottom: 10vh;
-           translate: calc(-50% + var(--px, 0px)) 0;
-    */
-    --clock-x: var(--content-x);                         /* = 导航栏 + gutter */
-    --clock-y: calc(var(--v-inset) + var(--nudge-clock)); /* 与 logo 同一条顶线 */
-    left: var(--clock-x);
-    top: var(--clock-y);
-    bottom: auto;
-    translate: var(--px, 0px) 0;                 /* ★ 不再用 -50% 居中，只保留视差 */
-    /* ★ 原来是 font 简写但漏了 font-size —— 整条声明非法被丢弃，
-         所以数字时钟从来没用上 Astron 字体 */
-    font-family: "Crunch-Light", ui-monospace, Consolas, monospace;
-    font-size: clamp(1.2rem, 5vw, 2.5rem);
-    color: var(--colck);
-    letter-spacing: 0.2em;
-    --parallax: 0.4;
-    pointer-events: none;
-    z-index: 0;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-.digital-clock .digit {
-    display: inline-block;
-    width: 0.6ch;
-    text-align: center;
-}
-
-@media (max-width: 768px) {
-    .digital-clock { display: none; }
-}
-
-/* .scanlines::after {
+.circle-2        { --k: 0.99;   --parallax: 0.16; }
+.circle-ticks-2  { --k: 0.99;   --parallax: 0.16; }
+.circle-3        { --k: 0.98;   --parallax: 0.35; }
+.circle-ticks-3  { --k: 0.98;   --parallax: 0.35; }
+    /* .scanlines::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -1995,7 +2184,7 @@ video {
     left: 0;
     width: 100vw;
     height: 100vh;
-    z-index: 9997;
+    z-index: 9995;
     pointer-events: none;
     will-change: transform;
     transition:
@@ -2058,6 +2247,7 @@ body.crosshair-active .crosshair-v {
         maskFade var(--t-maskFade-dur, 0.5s) ease var(--t-maskFade-delay, 4.3s) forwards;
 }
 
+
 @keyframes maskShrink {
     from {
         clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
@@ -2065,6 +2255,108 @@ body.crosshair-active .crosshair-v {
 
     to {
         clip-path: polygon(0 0, var(--nav-width) 0, var(--nav-width) 100%, 0 100%);
+    }
+}
+
+/* ============================================================
+   开屏第二层：纯色层
+   ------------------------------------------------------------
+   层级：z-index 9997 —— 红幕（9998）之下、准星（9997）之上；
+        和准星同层，靠 DOM 顺序（它是交叉线之后插入的）压住它。
+
+   时机：红幕开始往左收（--t-maskShrink-delay）之后 0.2s 起，
+        用 --t-iris-dur 摊开（默认 1.5s，正好在开屏结束前化完）。
+        两个变量都由 js/timeline.js 写。
+
+   做法：不用「插值渐变颜色」那种脆做法 —— 而是两层纯色 mask：
+         上半贴顶、下半贴底，各自高度从 50% 收到 0；
+         中间那条缝就是透明的，缝从 50% 向上下张开 = 纯色整体化开。
+   ★ mask-size 是长度/百分比，能插值；而且只动尺寸不动渐变结构，
+     比「关键帧里插值 linear-gradient 的 stop 位置」稳得多。 */
+.splash-化开 {
+    position: fixed;
+    inset: 0;
+    background: var(--text);
+    z-index: 9997;
+    pointer-events: none;
+
+    /* 两层都用「渐变」而不是纯色：外缘不透明 → 中线透明，所以中间那条缝是**软的**；
+       随着 mask-size 收到 0，两层一起淡掉。上面 60/下面 40 是这两条渐变的软度，
+       想让边更硬就往 100/0 靠，想更柔就往 50/50 靠。 */
+    -webkit-mask-image:
+        linear-gradient(to bottom, #000 0%, #000 90%, transparent 100%),
+        linear-gradient(to bottom, transparent 0%, #000 10%, #000 100%);
+            mask-image:
+        linear-gradient(to bottom, #000 0%, #000 90%, transparent 100%),
+        linear-gradient(to bottom, transparent 0%, #000 10%, #000 100%);
+    -webkit-mask-repeat: no-repeat, no-repeat;
+            mask-repeat: no-repeat, no-repeat;
+    -webkit-mask-position: top, bottom;
+            mask-position: top, bottom;
+    -webkit-mask-size: 100% 50%, 100% 50%;
+            mask-size: 100% 50%, 100% 50%;
+
+    animation: splashIris var(--t-iris-dur, 1.5s) ease var(--t-iris-delay, 3s) forwards;
+}
+
+/* ============================================================
+   开屏第三层：纯色网点层
+   ------------------------------------------------------------
+   层级：z-index 9996 —— 在上一层 .splash-化开（9997）**之下**；
+        和别的 9996 元素同层，靠 DOM 顺序（插在 .splash-化开 之后）压住它们。
+
+   时机：上一层开始（--t-iris-delay）之后 0.2s 起，用 --t-dots-dur 摊开。
+        duration 特意取 1.3s：3.2 + 1.3 = 4.5s，正好**不改变**开屏总时长
+        （总时长是各轨道 delay+duration 的最大值，body 那条正好 4.5s）。
+
+   做法：和上一层完全一样的两层渐变 mask（连关键帧都复用 splashIris），
+        区别只在「画什么」——这层画的是网点：
+        background-image 用 radial-gradient 铺点阵，颜色取 --text，
+        点径 / 间距复用全站那套 --halftone-dot / --halftone-size（和 body::after 同源）。
+   ★ 为什么网点放 background 而不是再叠一层 mask：mask 已经被
+     「向上下化开」占满了，再叠点阵就得用 mask-composite 交集，能不用就不用。 */
+.splash-网点 {
+    position: fixed;
+    inset: 0;
+    z-index: 9996;
+    pointer-events: none;
+
+    /* 网点（颜色 = --text） */
+    background-image: radial-gradient(
+        circle,
+        var(--text) var(--halftone-dot, 1px),
+        transparent calc(var(--halftone-dot, 1px) + 0.5px)
+    );
+    background-size: var(--halftone-size, 5px) var(--halftone-size, 5px);
+    background-repeat: repeat;
+
+    /* 向上下化开（和 .splash-化开 同一套） */
+    -webkit-mask-image:
+        linear-gradient(to bottom, #000 0%, #000 60%, transparent 100%),
+        linear-gradient(to bottom, transparent 0%, #000 40%, #000 100%);
+            mask-image:
+        linear-gradient(to bottom, #000 0%, #000 60%, transparent 100%),
+        linear-gradient(to bottom, transparent 0%, #000 40%, #000 100%);
+    -webkit-mask-repeat: no-repeat, no-repeat;
+            mask-repeat: no-repeat, no-repeat;
+    -webkit-mask-position: top, bottom;
+            mask-position: top, bottom;
+    -webkit-mask-size: 100% 50%, 100% 50%;
+            mask-size: 100% 50%, 100% 50%;
+
+    /* 关键帧复用 splashIris（只动 mask-size） */
+    animation: splashIris var(--t-dots-dur, 1.3s) ease var(--t-dots-delay, 3.2s) forwards;
+}
+
+@keyframes splashIris {
+    from {
+        -webkit-mask-size: 100% 50%, 100% 50%;
+                mask-size: 100% 50%, 100% 50%;
+    }
+
+    to {
+        -webkit-mask-size: 100% 0%, 100% 0%;
+                mask-size: 100% 0%, 100% 0%;
     }
 }
 
@@ -2104,8 +2396,17 @@ body.crosshair-active .crosshair-v {
     pointer-events: none;
     z-index: 99999;
     mix-blend-mode: difference;
-    transition: transform;
+
+    /* 默认透明：等开屏解锁（body.intro-done）后再用 0.5s 拉回来。
+       走 CSS 过渡而不是 JS 动画 —— 属性只由这一个类切换，没有第二个人抢。 */
+    opacity: 0;
+    transition: opacity 0.5s ease, transform;
 }
+
+body.intro-done .cursor-dot {
+    opacity: 1;
+}
+
 
 @media (prefers-reduced-motion: reduce) {
 
@@ -2114,6 +2415,22 @@ body.crosshair-active .crosshair-v {
     *::after {
         animation-duration: 0.01ms !important;
         transition-duration: 0.01ms !important;
+    }
+
+    /* ★ 常驻动效（infinite）不能只靠上面那条压 duration：
+       0.01ms + infinite = 每帧落在周期里的随机位置，反而变成乱跳。
+       所以这类直接关掉。 */
+    .halftone-scan::before {
+        animation: none !important;
+    }
+
+    /* 跟着滚动做的变形也算动效：不压扁、也不出线 */
+    #home .hero-title {
+        scale: none;
+    }
+
+    #home h1::after {
+        opacity: 0;
     }
 
     /* ★ 例外：主题换色不是"动效"—— 它不产生位移或缩放，不会引起前庭不适，
@@ -2125,8 +2442,7 @@ body.crosshair-active .crosshair-v {
     main,
     .section.alt-bg,
     #about .container,
-    .digital-clock,
-    .card,
+        .card,
     .skill-list li,
     .mosaic-layer,
     .mosaic-tile,
@@ -2165,6 +2481,10 @@ body.crosshair-active .crosshair-v {
     .section,
     .hero {
         width: 100%;
+        /* ★ 手机上是纵向长滚：必须把上面那套「一屏一格 + 宽度随内容」复位，
+           否则内容会被 100dvh 裁掉、而且滚不到 */
+        min-width: 0;
+        max-height: none;
         height: auto;
         min-height: auto;
         overflow-y: visible;
@@ -2261,6 +2581,8 @@ body.crosshair-active .crosshair-v {
    ============================================================ */
 html:not(.intro-armed) .splash-渐显,
 html:not(.intro-armed) .splash-遮罩,
+html:not(.intro-armed) .splash-化开,
+html:not(.intro-armed) .splash-网点,
 html:not(.intro-armed) .page-zoom,
 html:not(.intro-armed) .welcome-splash .char,
 html:not(.intro-armed) .welcome-tagline {

@@ -25,6 +25,8 @@ const html = read('index.html');
 const css = read('css/style.css');
 const worksSrc = read('data/works.js');
 const winSrc = read('js/floating-window.js');
+/* 状态机测试要跑真代码：把总开关临时顶成 true（发布时它可能是 false） */
+const winSrcForTest = winSrc.replace(/const ENABLED = (true|false);/, 'const ENABLED = true;');
 
 /* ============================================================
    1. index.html
@@ -136,12 +138,81 @@ const cssNC = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
     ok('.section/.hero 的纵向留白用 --v-inset', !!g(/\.section,\s*\.hero\s*\{[^}]*padding:\s*var\(--v-inset\)\s/));
     ok('--safe-b = 刻度尺 + --v-inset', !!g(/--safe-b:\s*calc\(var\(--ruler-h\)\s*\+\s*var\(--v-inset\)\)/));
     ok('navbar 顶线用 --v-inset（logo 与正文首行同线）', !!g(/padding:\s*calc\(var\(--v-inset\)\s*\+\s*var\(--nudge-logo\)\)/));
-    ok('数字时钟顶线用 --v-inset', !!g(/--clock-y:\s*calc\(var\(--v-inset\)/));
     ok('.section 顶对齐（flex-start，不是 center）', !!g(/\.section\s*\{[^}]*justify-content:\s*flex-start/));
     ok('.section .container 不再上下 auto 居中', !!g(/\.section\s*\.container\s*\{[^}]*margin:\s*0;/));
     /* .media-head 那两条是已知的死 CSS（HTML 里根本没有 .media-head），先排除掉 */
     ok('--gutter 不再参与纵向留白', !/padding:\s*var\(--gutter\)\s+var\(--gutter\)/.test(cssNC.replace(/\.media-head\s*\{[^}]*\}/g, '')));
     ok('技能页是纯散文（页面上没有 skill-list）', !html.includes('skill-list'));
+
+    /* --- #skills 的滚动必须落在正文列上，不能落在 section 上（P25）--- */
+    ok('#skills 自己没有 overflow（mosaic 的方块会污染滚动区）', !/#skills\s*\{[^}]*overflow/.test(cssNC));
+    ok('#skills 的滚动交给正文列', /#skills\s+\.container\s*\{[^}]*overflow-y:\s*auto/.test(cssNC) && /#skills\s+\.container\s*\{[^}]*max-height:\s*100%/.test(cssNC));
+
+    ok('主题切换有 VT 快路径 + 临时关过渡的保险',
+        /startViewTransition/.test(read('js/theme-toggle.js')) && /html\.theme-vt \*/.test(cssNC));
+
+    ok('开屏红幕只有 .splash-遮罩 一面（左收缩原样）',
+        /\.splash-遮罩\s*\{[^}]*maskShrink/.test(cssNC) &&
+        !/\.splash-遮罩\s*\{[^}]*display:\s*none/.test(cssNC));
+    ok('开屏纯色层：z 在红幕与准星之间 + 进了停表名单 + 靠 mask-size 化开',
+        /\.splash-化开\s*\{[^}]*z-index:\s*9997/.test(cssNC) &&
+        /linear-gradient\(to bottom, #000 0%, #000 60%, transparent 100%\)/.test(cssNC) &&
+        /html:not\(\.intro-armed\) \.splash-化开/.test(cssNC) &&
+        /@keyframes splashIris\s*\{[\s\S]*?mask-size:\s*100% 0%, 100% 0%/.test(cssNC) &&
+        /--t-iris-delay/.test(read('js/timeline.js')) &&
+        /splash-化开[^"]*\.welcome-splash/.test(read('js/main.js')) &&
+        /splash-化开[^"]*"\)\.forEach/.test(read('js/main.js')));
+    ok('body 网点：点阵在背景 + 上下两条带（0~20 / 80~100）+ 无 composite',
+        /background-image:\s*radial-gradient\([^;]*var\(--halftone-color\)/.test(cssNC) &&
+        /#000 0%,\s*transparent 20%,\s*transparent 80%,\s*#000 100%/.test(cssNC) &&
+        !/mask-composite/.test((cssNC.match(/body::after\s*\{[\s\S]*?\n\}/) || [''])[0]));
+    ok('#home 标题：压到 0 → 由 ::after 那条 1px 线接管（先慢后快 + 降动效关掉）',
+        /#home \.hero-title\s*\{[^}]*scale:\s*1 var\(--hero-squash/.test(cssNC) &&
+        /#home h1::after\s*\{[^}]*height:\s*1px/.test(cssNC) &&
+        /--hero-line/.test(read('js/home-squash.js')) &&
+        /t \* t \* t/.test(read('js/home-squash.js')) &&
+        /prefers-reduced-motion[\s\S]*?#home \.hero-title\s*\{\s*scale:\s*none/.test(cssNC));
+    ok('扫描带：外层套 profile、::before 两条带单向扫（mask-position）+ 降动效关掉',
+        /\.halftone-scan\s*\{[^}]*mask-image/.test(cssNC) &&
+        /\.halftone-scan::before\s*\{[\s\S]*?mask-position:\s*0 50%, 0 50%/.test(cssNC) &&
+        /@keyframes halftoneScan\s*\{[\s\S]*?0 -50%, 0 150%/.test(cssNC) &&
+        /--scan-h:\s*\S+/.test(cssNC) &&   // 值你手调过（20vh），只断言存在
+        /prefers-reduced-motion[\s\S]*?\.halftone-scan::before\s*\{\s*animation:\s*none/.test(cssNC));
+    ok('开屏网点层：在化开层之下 + 复用 splashIris + 颜色取 --text',
+        /\.splash-网点\s*\{[^}]*z-index:\s*9996/.test(cssNC) &&
+        /html:not\(\.intro-armed\) \.splash-网点/.test(cssNC) &&
+        /radial-gradient\(\s*circle,\s*var\(--text\)/.test(cssNC) &&
+        /animation:\s*splashIris var\(--t-dots-dur/.test(cssNC) &&
+        /--t-dots-delay/.test(read('js/timeline.js')));
+    ok('圆形指针只做位置跟随（没有缩放 / 动画机制抢 transform）',
+        /translate\(\$\{cx\}px, \$\{cy\}px\)/.test(read('js/main.js')) &&
+        !/CURTAIN|coverScale|scaleTo|dot\.animate/.test(read('js/main.js')));
+
+    /* 这条只看结构 —— 具体倍率是你手调的，别拿断言绑死 */
+    const zoomKf = (cssNC.match(/@keyframes body缩放\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('开屏缩放是多段关键帧 + 每段自带曲线 + 收在 scale(1)',
+        (zoomKf.match(/%\s*\{/g) || []).length >= 3 &&
+        (zoomKf.match(/animation-timing-function/g) || []).length >= 2 &&
+        /100%\s*\{\s*transform:\s*scale\(1\)/.test(zoomKf));
+    ok('圆形指针默认透明，解锁（intro-done）后 0.5s 显出来',
+        /\.cursor-dot\s*\{[^}]*opacity:\s*0/.test(cssNC) &&
+        /body\.intro-done\s+\.cursor-dot\s*\{\s*opacity:\s*1/.test(cssNC) &&
+        /\.cursor-dot\s*\{[^}]*transition:\s*opacity\s+0\.5s/.test(cssNC));
+
+    /* --- 每一节：高度锁死、宽度放开（P24）--- */
+    const secBlock = (cssNC.match(/\.section,\s*\.hero\s*\{[^}]*\}/) || [''])[0];
+    ok('高度三件套都写死 100dvh（谁也别想把它顶高）',
+        /height:\s*100dvh/.test(secBlock) && /min-height:\s*100dvh/.test(secBlock) && /max-height:\s*100dvh/.test(secBlock));
+    ok('宽度随内容长（max-content + 一屏的 min-width）',
+        /width:\s*max-content/.test(secBlock) && /min-width:\s*calc\(100vw\s*-\s*var\(--nav-width\)\)/.test(secBlock));
+    ok('不收缩也不放大（flex: 0 0 auto；写了 shrink 就会把节压窄）',
+        /flex:\s*0\s+0\s+auto/.test(secBlock));
+    /* ★ 文件里有 8 个 (max-width:768px) 查询（浮窗、前景粒子各有自己的），
+       要挑出「那一条」——按里面有没有 .section, 来认 */
+    const _mob = [...cssNC.matchAll(/@media\s*\(max-width:\s*768px\)/g)];
+    const mobBlock = _mob.map(m => cssNC.slice(m.index, m.index + 2000)).find(s => /\.section,/.test(s)) || '';
+    ok('移动端把「一屏一格」复位（否则内容被裁且滚不到）',
+        /min-width:\s*0;/.test(mobBlock) && /max-height:\s*none;/.test(mobBlock) && /height:\s*auto;/.test(mobBlock));
 })();
 
 /* ============================================================
@@ -258,11 +329,12 @@ let paused = 0, resumed = 0;
 global.World = { pause() { paused++; }, resume() { resumed++; } };
 
 eval(worksSrc);
-eval(winSrc);
+eval(winSrcForTest);
 const W = window.WorkWindow;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async function run() {
+    ok('浮窗总开关存在（当前 ' + (/const ENABLED = (\w+)/.exec(winSrc)[1]) + '）', /const ENABLED = (true|false);/.test(winSrc));
     ok('WorkWindow 导出 open/close', typeof W.open === 'function' && typeof W.close === 'function');
 
     section('  · 打开 gallery');
@@ -344,7 +416,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     section('  · 降低动效分支（重新加载模块）');
     global.matchMedia = q => ({ media: q, matches: /reduced-motion/.test(q), addEventListener() {}, removeEventListener() {} });
     delete window.WorkWindow;
-    eval(winSrc);
+    eval(winSrcForTest);
     const WR = window.WorkWindow;
     WR.open('music');
     ok('reduced 下能打开', dialog.open === true && dialog.classList.contains('is-in'));

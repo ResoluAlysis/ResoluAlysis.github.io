@@ -102,8 +102,6 @@
         return new Date();
     }
 
-    const elText = document.querySelector('.digital-clock');
-    let lastClockText = '';     // ★ 数字时钟只在秒数变化时才写 DOM
 
     function updateClock() {
         const t = now();
@@ -116,18 +114,6 @@
         if (elS) elS.style.transform = `rotate(${(180 - s * 6).toFixed(2)}deg)`;
         if (elM) elM.style.transform = `rotate(${(180 - m * 6).toFixed(2)}deg)`;
         if (elH) elH.style.transform = `rotate(${(180 - h * 30).toFixed(2)}deg)`;
-
-        // ★ 数字时钟（24 小时制）
-        if (elText) {
-            const HH = String(t.getHours()).padStart(2, '0');
-            const MM = String(t.getMinutes()).padStart(2, '0');
-            const SS = String(t.getSeconds()).padStart(2, '0');
-            const txt = `${HH}:${MM}:${SS}`;
-            if (txt !== lastClockText) {
-                lastClockText = txt;
-                elText.textContent = txt;
-            }
-        }
     }
     /* ★ 交给 World 的公共 rAF，不再自己开一个循环 */
     if (window.World) World.onFrame(updateClock);

@@ -7,6 +7,10 @@ window.SPLASH_TIMELINE = {
   welcomeIn:  { delay: 0.8, duration: 1.6 },   // 开屏字符逐字出现 + 停留
   welcomeOut: { delay: 2.2, duration: 1.0 },   // 开屏字符向左滑出（= welcomeIn.delay + welcomeIn.duration）
   maskShrink: { delay: 2.8, duration: 1.5 },   // 红遮罩缩到左侧
+  // 纯色层：在红幕开始移动 0.2s 后，从中线向上下化开（图层见 style.css 的 .splash-化开）
+  iris:       { delay: 3.0, duration: 0.8 },   // = maskShrink.delay + 0.2
+  // 网点层：在上一层之后 0.2s，同样向上下化开（duration 取 1.3，总和仍是 4.5s）
+  dots:       { delay: 3.2, duration: 1.2 },   // = iris.delay + 0.2
   maskFade:   { delay: 3.8, duration: 0.5 },   // 红遮罩淡出
   cross:      { delay: 3.0, duration: 1.2 },   // 准星收缩
   circlesIn: { delay: 4.0, duration: 0.1, stagger: 0.2, grow: 0.05 },   // 时间圆环闪烁登场
@@ -27,6 +31,12 @@ window.SPLASH_TIMELINE = {
 
   // 总时长 = 所有轨道里 delay + duration 最大的那个
   const total = Math.max(...Object.values(t).map(v => v.delay + v.duration));
+  /* ★ 纯色层的起点 = 红幕开始移动 + 0.2s。
+       这里现算一遍覆盖上面那个手写的 delay —— 以后改 maskShrink.delay，它会跟着走。 */
+  const sec = (n) => Math.round(n * 1000) / 1000 + "s";   // 抹掉浮点尾巴（2.8+0.4 会变成 3.1999999999999997）
+  root.style.setProperty("--t-iris-delay", sec(t.maskShrink.delay + 0.2));
+  root.style.setProperty("--t-dots-delay", sec(t.maskShrink.delay + 0.4));
+
   root.style.setProperty("--t-total", total + "s");
   window.SPLASH_TOTAL = total;
 })();

@@ -37,8 +37,8 @@
         <div class="welcome-tagline welcome-tagline-bottom">WELCOME FOR RESOLUALYSIS WEB</div>
         <div class="splash-遮罩"></div>
         <div class="splash-渐显"></div>
-        <canvas id="foreground-particles" aria-hidden="true"></canvas>
-        <canvas id="particle-layer" aria-hidden="true"></canvas>
+        <!-- <canvas id="foreground-particles" aria-hidden="true"></canvas> -->
+        <!-- <canvas id="particle-layer" aria-hidden="true"></canvas> -->
         <canvas id="ruler-bottom" aria-hidden="true"></canvas>
         <canvas id="ruler-left" aria-hidden="true"></canvas>
         <div class="ruler-marker-x"></div>
@@ -50,10 +50,18 @@
         <!-- 鼠标指针 -->
         <div class="crosshair-h"></div>
         <div class="crosshair-v"></div>
+        <!-- 开屏第二层：纯色层（在红幕之下、准星之上）——
+             红幕开始往左收 0.2s 后，它从 50% 那条中线向上下化开成透明；
+             版式与关键帧见 style.css 的 .splash-化开 -->
+        <div class="splash-化开"></div>
+        <!-- 开屏第三层：纯色网点层（在上一层「化开」之下）——
+             上一层开始 0.2s 后，同样从 50% 中线向上下化开；
+             版式见 style.css 的 .splash-网点 -->
+        <div class="splash-网点"></div>
         <div class="cursor-dot"></div>
 
         <!-- 液滴层 -->
-        <div class="liquid-bg"></div>
+        <!-- <div class="liquid-bg"></div> -->
 
         <!-- 圆环 -->
 
@@ -70,7 +78,6 @@
         <svg class="circle-ticks circle-ticks-3" viewBox="0 0 200 200"
             data-count="360" data-major="30" data-len-major="4" data-len-minor="2"
             data-width-major="0.2" data-width-minor="0.2"></svg>
-        <div class="digital-clock">00:00:00</div>
 
         <!-- 导航栏 -->
         <header class="navbar">
@@ -78,10 +85,10 @@
                 <a href="#home" class="logo">RA</a>
                 <nav>
                     <ul class="nav-links">
-                        <li><a href="#about">关于</a></li>
-                        <li><a href="#skills">技能</a></li>
-                        <li><a href="#projects">作品</a></li>
-                        <li><a href="#contact">联系</a></li>
+                        <li><a href="#about">test</a></li>
+                        <li><a href="#skills">test</a></li>
+                        <li><a href="#projects">test</a></li>
+                        <li><a href="#contact">test</a></li>
                     </ul>
                 </nav>
 
@@ -100,8 +107,8 @@
 
                     <!-- 内容层 -->
                     <div class="hero-content">
-                        <h1>-<span class="highlight">ResoluAlysis</span>-</h1>
-                        <p class="subtitle">test</p>
+                        <h1><span class="hero-title"><span class="highlight">ResoluAlysis</span></span></h1>
+                        <p class="subtitle">这里是 ResoluAlysis 的个人页，施工中尽情期待</p>
                         <div class="hero-buttons">
                             <a href="#projects" class="btn primary">作品集</a>
                             <a href="#contact" class="btn ghost">联系我</a>
@@ -145,11 +152,8 @@
             <section id="skills" class="section alt-bg">
                 <div class="container">
                     <div class="skills-text">
-                        <p>占位正文：一段 2~4 行的自我介绍 —— 在做什么、做过什么、想做什么。
-                            换成自己的话之后把这段删掉重写即可。</p>
-                        <p>占位正文：工具与手艺直接摊在散文里就行，不必做成标签云 ——
-                            比如 C#、Python、HTML / CSS / JavaScript，Unity 与 Blender，
-                            绘画与编曲。</p>
+                        <p>测试文本</p>
+                        <p>测试文本</p>
                     </div>
                 </div>
             </section>
@@ -162,7 +166,7 @@
 
                         <!-- 卡片自己不带文案：点开是浮窗，内容全部来自 data/works.js，
                              data-work 就是那件作品的 id。 -->
-                        <article class="card ak-card" data-work="boom-shooting" tabindex="0" role="button"
+                        <!-- <article class="card ak-card" data-work="boom-shooting" tabindex="0" role="button"
                             aria-label="打开作品：Boom Shooting">
                             <div class="ak-card-inner">
                                 <img src="assets/images/_test.jpg" alt="Boom Shooting 封面（占位图）" />
@@ -186,7 +190,7 @@
                             <h3>绘画</h3>
                             <p>手绘 / 速写 / 数字绘画</p>
                             <span class="card-open">查看 ↗</span>
-                        </article>
+                        </article> -->
 
                     </div>
                 </div>
@@ -300,6 +304,7 @@
         <script src="js/blobs.js"></script>
         <script src="js/mosaic.js"></script>
         <script src="js/main.js"></script>
+        <script src="js/home-squash.js"></script>
         <script src="js/rulers.js"></script>
         <script src="js/guides.js"></script>
         <script src="js/colck.js"></script>
@@ -350,6 +355,13 @@
             </defs>
         </svg>
     </div>
+    <!-- 网点扫描层：和 body::after 的点阵同色，叠上去 = 那一条的透明度翻倍。
+         结构：外层负责「网点本来就在的地方」（上下带 profile），
+               ::before 负责「从中间往上下扫的那条带」——
+               父子 mask 天然相乘，就不用 mask-composite 了。
+         版式见 style.css 的 .halftone-scan -->
+    <div class="halftone-scan" aria-hidden="true"></div>
+
     <!-- ============================================================
          作品浮窗
          ------------------------------------------------------------
