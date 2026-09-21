@@ -31,13 +31,57 @@ textarea {
 /* ============================================================
    字体
    ============================================================ */
+/* ★ 子集化（P27）：HuXiaoBo.otf 里有 7409 个字形（一整套 CJK）= 3.2MB，
+   而站点真正用到的只有 346 个 —— 裁完 30KB，是原体积的 0.96%。
+   为什么值得做：这个字体正是**开屏闸门**在等的东西（见 js/timeline.js），
+   3.2MB 意味着那行巨大的 WELCOME 会先用系统字体渲染、等字体到了再当着
+   用户的面重排一次；30KB 基本瞬间到位，MAX_WAIT 那条兜底几乎不会被触发。
+   生成脚本：node _dev/subset-font.js —— **改过页面文案就要重跑**，
+   _dev/check.js 里有断言盯着「文案变了但字体没重裁」这件事。 */
 @font-face {
     font-family: 'HuXiaoBo';
-    src: url('../assets/fonts/HuXiaoBo.otf') format('opentype');
+    src: url('../assets/fonts/HuXiaoBo-subset.woff2') format('woff2');
     font-weight: 400;
     font-style: normal;
     font-display: swap;
     /* 字体加载中先用系统字体，加载完再换 */
+}
+/* ★ 兜底字形：子集没覆盖到的字（以后加了新文案又忘了重裁、或者某个字是
+   运行时拼出来的）落在这里 —— 同一份原字体，度量完全一致，混排看不出接缝。
+   ★ 它**不会**拖慢开屏：浏览器只在「子集里确实缺这个字形」时才去取它，
+     正常运行一个字节都不下载（这正是 CSS 字体回退的语义）。
+   ★ 必须另起一个 family 名。若两条 @font-face 共用 'HuXiaoBo'、后一条又
+     不带 unicode-range，按规范后声明的会赢 —— 子集就永远轮不上了。 */
+@font-face {
+    font-family: 'HuXiaoBo-Full';
+    src: url('../assets/fonts/HuXiaoBo.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    /* ★★ 这条 unicode-range 是必须的，不是优化。
+       HuXiaoBo 原字体**也有它自己没有的字形** —— 页面上真正用到的就有两个：
+       `↗`(U+2197，浮窗的「新标签打开」) 和 `✕`(U+2715，浮窗的关闭按钮)，
+       原字体里根本没有这两个字形，一直是靠回退到系统字体显示的。
+       如果这里不限范围，浏览器为了这两个字会**把 3.2MB 原字体整个拉下来**、
+       然后发现还是没有，再回退系统字体 —— 白下 3.2MB。
+       （今天还不一定会踩到：浮窗总开关是关的、<dialog> 也没 open，
+         display:none 的内容不做字体匹配；但一旦打开浮窗就会踩。）
+       所以把兜底限定在它真正能服务的范围：CJK 与中文标点。
+       新加的中文文案走这里，符号/emoji 直接落到系统字体。 */
+    unicode-range:
+        U+2E80-2EFF,    /* CJK 部首补充 */
+        /* ★ 从 U+3001 起，**不含 U+3000（全角空格）**：
+           原字体里没有 U+3000 这个字形，罩上它只会让一个空格
+           触发 3.2MB 的兜底字体下载。清单里的 absent 名单就是干这个的，
+           自检每次都会核对这两者不重叠。 */
+        U+3001-30FF,    /* CJK 标点 + 假名 */
+        U+31C0-31EF,    /* CJK 笔画 */
+        U+3200-32FF,    /* 带圈 CJK */
+        U+3400-4DBF,    /* CJK 扩展 A */
+        U+4E00-9FFF,    /* CJK 基本区 */
+        U+F900-FAFF,    /* CJK 兼容表意文字 */
+        U+FE30-FE4F,    /* CJK 兼容形式 */
+        U+FF00-FFEF;    /* 全角形式 */
 }
 @font-face {
     font-family: 'Astron';
@@ -128,6 +172,18 @@ textarea {
     /* HUD 边缘（刻度尺）厚度 */
     --ruler-w: 8px;
     --ruler-h: 8px;
+
+    /* 准星展开（吸住大块）时，两条尺子上从两个三角中间"拉出来"的
+       半透明红带（P32）。想更明显 / 更淡只改 alpha；想更厚改 --band-h/w。
+       ★ 16px 是刻意比尺子厚一倍：条带从尺子往外再长出 8px，
+         读数的"让开"动作才看得出来。 */
+    --band-alpha: 0.22;
+    --band-h: 16px;
+    --band-w: 16px;
+    /* 读数给条带让开多少（底尺往上升、左尺往右让） */
+    --read-lift: 18px;
+    /* 拖框时框内那层主题红的浓度（P41）—— "极低"，所以只有 0.07 */
+    --fill-alpha: 0.07;
 
     /* --- 派生值：不要直接写数字，用这两个 --- */
     /* 固定层（数字时钟等）需要的内容起点 = 让开左侧导航栏 */
@@ -336,7 +392,7 @@ html {
 
 body {
     will-change: background-color;
-    font-family: "HuXiaoBo", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    font-family: "HuXiaoBo", "HuXiaoBo-Full", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
         "PingFang SC", 'Open Sans', 'Microsoft YaHei', sans-serif;
     background: var(--bg);
     color: var(--text);
@@ -440,6 +496,14 @@ body::before {
     opacity: 0.1;
     /* ★ data URI 里的 < > # % 全部转义：Safari 对未转义字符更严格 */
     background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='200'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20baseFrequency='0.9'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");
+
+    /* ★★ P30：整层噪点（feTurbulence 颗粒）按要求去掉了。
+       用一个开关式的 display:none，而不是把这条规则删掉 ——
+       上面那些几何/转义都是踩过坑才写对的，留着好恢复。
+       ★ 注意：这层是"噪点"（颗粒），和 body::after 的"网点"（半调点阵）
+         是两回事，这里只关前者，网点那套（含 .halftone-scan 扫描带）原样保留。
+       想恢复：把下面这一行删掉即可。 */
+    display: none;
 }
 body::after {
     content: "";
@@ -595,7 +659,47 @@ body::after {
     bottom: var(--safe-b);
     left: var(--content-x);
     pointer-events: none;
+    /* ★ 4 只是个"活着的时候"的层号：在正文之上（正文 ≤ 11），
+       在导航栏(100)/页脚(101)/仪器(9994~9998)之下。
+       —— 开屏那一段它不可能是这个层号，见下面那条 `body:not(.intro-done)`。 */
     z-index: 4;
+}
+
+/* ============================================================
+   ★★ P49：开屏期间四角刻线必须退到**整页之下**
+   ------------------------------------------------------------
+   现象：开屏那几秒，四角刻线浮在红幕 / WELCOME / 化开层上面。
+
+   ★★★ 为什么"把 .draft-frame 的 z-index 改成 999"**没有用** ——
+     这是这轮唯一值得记住的一条：
+
+     · `.page-zoom` 身上挂着开屏那份 transform（`animation: body缩放 … both`），
+       所以它在开屏期间是一个**层叠上下文**；
+     · 它是个**非定位元素**形成的层叠上下文，在 body 里按**层号 0** 参与排序
+       （和"z-index: 0 的定位元素"同一批），而不是按普通块级内容排；
+     · 开屏那几层的 z-index（9996 / 9997 / 9998 / 10000）**全部关在这个
+       上下文里面**，一个都出不来 —— 它们再大，也只是"0 里面的大"；
+     · 而 `.draft-frame` 是 **body 的直接子元素** + `position: fixed` +
+       正层号 → 永远排在层号 0 **之后**。
+
+     所以 4 和 999 是一样的：**都是正数，都压在整页上面**。
+     要落到 `.page-zoom` 那一层**下面**，层号只能是**负数**。
+     （"两个数比较大小"只在同一个层叠上下文里成立；
+       跨上下文时先比上下文，再比里面的数。这就是这个坑的全部。）
+
+   ★ 门（`body:not(.intro-done)`）和 `body.intro-done .page-zoom { transform: none }`
+     用的是**同一个**判定 —— 这不是巧合，是必须的：
+     "刻线要退到后面"这件事成立的唯一原因就是".page-zoom 上还挂着那份 transform"。
+     哪天那份 transform 提前清掉，这条规则也就自动失效，不会留下一个多余的负层号。
+
+   ★ 代价只有一条、而且只在开屏期间：这两三秒内刻线在整页之下，
+     也就是**看不见**（红幕是不透明的）。开屏结束（`intro-done`）时
+     它回到 z-index: 4 —— 是"跳"回来的，没有过渡。
+     想要淡入的话，在 `.draft-frame` 上给个 `transition: opacity`，
+     再用 `body:not(.intro-done) { opacity: 0 }` 那条路更直白；
+     这里先不动 —— 你要的是"别压在上面"，不是"淡入"。 */
+body:not(.intro-done) .draft-frame {
+    z-index: -1;
 }
 
 /* 点 · 四角刻线（两条边，用 border 画） */
@@ -676,6 +780,7 @@ body::after {
     flex: 0 0 auto;
     width: 1px;
     background: var(--panel-line);
+    pointer-events: none;   /* 纯装饰（外面套着 aria-hidden），别去挡导航栏的交互 */
 }
 
 .df-bar i {
@@ -686,15 +791,36 @@ body::after {
     transform-origin: center bottom;
 }
 
+/* 推进点。
+   ★ 位置走 transform（合成器属性），**不要**用 `bottom: %`（布局属性）。
+     同一帧里 transform 的改动可以只走合成器（重绘都不用），
+     而 bottom 必须过一遍布局 + 重绘；主线程一忙（旁边有常驻动画在跑、
+     或者在快速滚动），前者已经上屏、后者还在排队 —— 表现就是
+     「进度条在走，点有时候不跟」。现在它和 .df-bar i 的 scaleY 一样
+     是纯 transform，同一帧必然一致。
+   ★ 盒子的高度必须**等于整条轨道**，translateY 的百分比才等于"轨道的百分之几"：
+     所以 top / bottom 都写 0。可见的 5×5 方块交给 ::after 画在盒子下沿。
+     （盒子本身没有背景，往上溢出的是个透明框，不会画出来。） */
 .df-bar b {
     position: absolute;
     left: -2px;
-    bottom: 0;
+    top: 0;
+    bottom: 0;                                      /* = 整条轨道高 */
+    width: 5px;
+    transform: translateY(calc(-1 * var(--df-p, 0%)));
+}
+
+.df-bar b::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;                                      /* 贴住盒子下沿 */
     width: 5px;
     height: 5px;
     background: var(--accent);
-    transform: translateY(2.5px);
+    transform: translateY(2.5px);                   /* 骑在推进线上（和原来的观感一致） */
 }
+
 
 
 .page-zoom {
@@ -1289,7 +1415,13 @@ main::-webkit-scrollbar-thumb:hover {
     transition: text-shadow 0.4s;
 }
 
-.hero h1:hover {
+/* ★ P37：`main` 里的悬停一律走 `.is-hot`，**不用** `:hover`。
+   原因：页面在光标底下横向滚过去时，浏览器不保证更新 `:hover` ——
+   先移鼠标进去（`:hover` 挂上）、再滚轮把它滚走，`:hover` 会**卡住**，
+   面板/按钮就一直亮着。而 js/crosshair.js 的滚动命中测试能可靠地
+   挂/摘 `.is-hot`，所以以它为准。
+   （固定的导航栏不随页面滚动，那边的 `:hover` 是准的，保留。） */
+.hero h1.is-hot {
     text-shadow:
         0 0 0 var(--black);
 }
@@ -1322,7 +1454,8 @@ main::-webkit-scrollbar-thumb:hover {
     color: #fff;
 }
 
-.btn.primary:hover {
+/* 同上：`.btn` 在 `main` 里，会随页面滚走 —— 悬停态走 .is-hot */
+.btn.primary.is-hot {
     opacity: 0.85;
 }
 
@@ -1331,7 +1464,7 @@ main::-webkit-scrollbar-thumb:hover {
     color: var(--text);
 }
 
-.btn.ghost:hover {
+.btn.ghost.is-hot {
     border-color: var(--accent);
     color: var(--accent);
 }
@@ -1369,7 +1502,10 @@ main::-webkit-scrollbar-thumb:hover {
         border-color     var(--theme-dur) var(--theme-ease);
 }
 
-#about .container:hover {
+/* 同上：`#about` 现在是停用段落（HTML 里整节注释掉了），
+   但它是 `main` 里的东西，重新启用时会随页面滚 —— 一并改成 .is-hot，
+   免得留一颗地雷。 */
+#about .container.is-hot {
     transform: translateY(-4px);
 }
 
@@ -1403,7 +1539,7 @@ main::-webkit-scrollbar-thumb:hover {
     z-index: 1;
 }
 
-#about .container:hover::before {
+#about .container.is-hot::before {
     opacity: 1;
     animation: borderFlow 2.5s linear infinite;
 }
@@ -1466,7 +1602,7 @@ main::-webkit-scrollbar-thumb:hover {
     box-shadow: 8px 8px 0 var(--card-shadow, var(--black));
 }
 
-.card:hover {
+.card.is-hot {
     transform: translateY(-4px);
     border-color: var(--accent);
 }
@@ -1511,7 +1647,7 @@ main::-webkit-scrollbar-thumb:hover {
     transition: box-shadow 0.3s, transform 0.3s;
 }
 
-.ak-card:hover {
+.ak-card.is-hot {
     transform: translate(-2px, -2px);
     box-shadow: 8px 8px 0 rgba(17, 175, 207, 0.3);
 }
@@ -1554,7 +1690,7 @@ main::-webkit-scrollbar-thumb:hover {
     z-index: 2;
 }
 
-.ak-card:hover::after {
+.ak-card.is-hot::after {
     opacity: 0.8;
 }
 
@@ -1817,13 +1953,22 @@ video {
             mask-repeat: repeat;
 }
 
-/* 只在真的支持 hover 的设备上做悬停效果（否则触屏点一下会残留 hover 态） */
+/* 只在真的支持 hover 的设备上做悬停效果（否则触屏点一下会残留 hover 态）
+   ★ P37：这里**只用 `.is-hot`，不用 `:hover`**。
+     P36 我一度写成「`:hover` 和 `.is-hot` 各一份」，那是错的：
+     `is-hot` 会被滚动命中测试可靠地摘掉，但**卡住的那条 `:hover` 还在** ——
+     于是"先移鼠标进去、再滚轮滚走"时元素依旧亮着（你报的这个 bug）。
+     两个选择器指向同一套样式时，只要有一个卡住，整体就是卡住的。
+     所以判据只能有一个，而且是那个我们能控制、能清除的。
+     js/crosshair.js 的 setLiveHot() 负责挂/摘它（滚动、布局变化、
+     鼠标移出窗口都会重判）。 */
 @media (hover: hover) and (pointer: fine) {
-    .media-panel:hover .media-panel-bg {
+    .media-panel.is-hot .media-panel-bg {
         opacity: 1;
         transform: scale(1);
     }
-    .media-panel:hover .media-panel-title {
+
+    .media-panel.is-hot .media-panel-title {
         color: var(--accent);
         transform: translateY(-0.12em);
     }
@@ -1958,7 +2103,7 @@ video {
     /* 光学补偿：把字迹从「行盒中心」挪到「视觉中心」，并跟随拉伸倍数放大 */
     margin-top: calc(var(--splash-ink-nudge) * var(--welcome-stretch, 1));
     z-index: 9999;              
-    font-family: "HuXiaoBo", system-ui, sans-serif;
+    font-family: "HuXiaoBo", "HuXiaoBo-Full", system-ui, sans-serif;
     font-size: var(--welcome-fs);
     font-weight: 1000;
     letter-spacing: 0em;
@@ -2033,7 +2178,7 @@ video {
        （全部从上面的规格变量推导，不再依赖字号） */
     --tagline-shift: calc(var(--welcome-h) / 2 + var(--splash-gap) + var(--tagline-h) / 2);
 
-    font-family: "HuXiaoBo", system-ui, sans-serif;
+    font-family: "HuXiaoBo", "HuXiaoBo-Full", system-ui, sans-serif;
     font-size: var(--tagline-fs);
     font-weight: 1000;
     letter-spacing: 0em;
@@ -2154,22 +2299,28 @@ video {
 /* ============================================================
    刻度尺位置指示三角（CSS 三角形）
    ------------------------------------------------------------
+   ★ P31：每条准星线配一个 —— 底尺两个 .ruler-marker-x（跟 x1 / x2），
+     左尺两个 .ruler-marker-y（跟 y1 / y2）。平时四条线都收在鼠标处，
+     所以同轴的两个三角完全重叠、看起来还是一个；只有悬停到大块、
+     四条线张开成框时才分开。位置由 js/rulers.js 写 transform。
+
    ★ CSS 三角形的几何很容易记反：width/height 都是 0，形状完全由
      border 决定。规则是 ——「一对相对的透明边框」构成底边，
      「那条有颜色的边框」才是高（也就是尖端指向）。
+     下面的数字**和代码逐项对齐**（这段注释以前写的是另一套尺寸，
+     已经对不上了，P31 顺手改准）：
        .ruler-marker-x（底尺，尖朝上）
-           border-left / right = 6px  → 底边宽 = 6 + 6 = 12px
-           border-bottom       = 5px  → 高     = 5px，尖朝上
+           border-left / right = 2px  → 底边宽 = 2 + 2 = 4px
+           border-bottom       = 8px  → 高     = 8px，尖朝上
        .ruler-marker-y（左尺，尖朝右）
-           border-top / bottom = 6px  → 底边高 = 6 + 6 = 12px
-           border-left         = 5px  → 宽     = 5px，尖朝右
+           border-top / bottom = 2px  → 底边高 = 2 + 2 = 4px
+           border-left         = 8px  → 宽     = 8px，尖朝右
      两者是同一个三角形旋转 90°，所以改尺寸必须同步改，否则两条尺子
      的三角形会不一样大。
 
-   位置：底边贴在尺子「外沿」（屏幕边）往里 2px 处。
-     尺子厚 8px（--ruler-h / --ruler-w），三角形高 5px，
-     所以它整个落在尺子内部，只在靠外一侧留 2px。
-     想更贴边就把两个 2px 改成 1px。
+   位置：三角的高（8px）正好等于尺子厚度（--ruler-h / --ruler-w = 8px），
+     而 bottom / left 写的是 0 —— 所以它整个落在尺子里、贴着屏幕外沿。
+     想让它往里挪，把 bottom / left 改成 1px 或 2px。
    ============================================================ */
 .ruler-marker-x,
 .ruler-marker-y {
@@ -2177,53 +2328,353 @@ video {
     width: 0;
     height: 0;
     pointer-events: none;
+    /* ★★ P49：这一条**改过又改回来了**，记录在这里免得再犯。
+       我一度把 9998 改成 999，理由是"三角在开屏上"—— 诊断错了：
+       你说的"四角刻线"是 `.draft-frame`（见下面那条规则 + 659 行附近）。
+       ★ 顺便把"三角 vs 红幕"这件事记清楚（**是真的，但看不见**）：
+         · 三角和 `.splash-遮罩` 同为 9998，而三角在 index.html 第 55–58 行、
+           遮罩在第 43 行 —— 同层号时后出现的在上，所以三角确实压在红幕上；
+         · 但红幕本身就是 `var(--accent)` 的实心红，红三角落在红幕上**看不见**，
+           所以这不是一个会被看到的问题，不值得为它动层级。
+       ★ 改回 9998 还有别的原因：那个位置是**故意的** ——
+         红带（9997）的注释写着"尺子之上、三角/读数之下"。
+         降到 999 会让红带盖过三角、让准星线在三角腿上切 1px，
+         为了一个看不见的问题换来两个看得见的小瑕疵，不划算。 */
     z-index: 9998;
     will-change: transform;
 }
 
 .ruler-marker-x {
-    bottom: 0px;                 /* 距屏幕底边 2px（尺子外沿往里） */
+    bottom: 0;
     left: 0;
-    border-left: 2px solid transparent;      /* 底边宽 12px */
-    border-right: 2px solid transparent;
-    border-bottom: 8px solid var(--accent);  /* 高 5px，尖朝上 */
-    border-top: 0;
-    transform: translateX(-50%);
+}
+
+/* ★ P31：四个三角形改成**直角三角形**，每个都往"离开准星框"的方向伸出去 ——
+   这样准星展开成框时，两个三角是朝外张开的（像一对括号），
+   而准星完全合并时，同轴的两个三角正好拼成一个左右对称的尖。
+   每个三角形仍然是「一条有色边 = 斜边方向、一条相邻透明边 = 另一条腿」。
+   外接框的尺寸和改之前一样（底尺 4×8，左尺 8×4），只是形状从等腰变直角。 */
+
+/* 底尺 · 左线（x1）：向左 + 向上 → 直角在盒子右下角，
+   竖直那条腿落在**盒子右边缘**（= 线的 x），JS 要 translateX(-100%) 对齐 */
+.ruler-marker-x[data-cross="x1"] {
+    border: 0;
+    border-left: 4px solid transparent;
+    border-bottom: 8px solid var(--accent);
+}
+
+/* 底尺 · 右线（x2）：向右 + 向上 → 直角在左下角，
+   竖直腿在盒子**左边缘**，JS 不偏移 */
+.ruler-marker-x[data-cross="x2"] {
+    border: 0;
+    border-right: 4px solid transparent;
+    border-bottom: 8px solid var(--accent);
 }
 
 .ruler-marker-y {
-    left: 0px;                   /* 距屏幕左边 2px（尺子外沿往里） */
+    left: 0;
     top: 0;
-    border-top: 2px solid transparent;       /* 底边高 12px */
-    border-bottom: 2px solid transparent;
-    border-left: 8px solid var(--accent);    /* 宽 5px，尖朝右 */
+}
+
+/* 左尺 · 上线（y1）：向上 + 向右 → 直角在左下角，
+   水平腿落在**盒子下边缘**（= 线的 y），JS 要 translateY(-100%) 对齐 */
+.ruler-marker-y[data-cross="y1"] {
+    border: 0;
+    border-top: 4px solid transparent;
+    border-left: 8px solid var(--accent);
+}
+
+/* 左尺 · 下线（y2）：向下 + 向右 → 直角在左上角，
+   水平腿在盒子**上边缘**，JS 不偏移 */
+.ruler-marker-y[data-cross="y2"] {
+    border: 0;
+    border-bottom: 4px solid transparent;
+    border-left: 8px solid var(--accent);
+}
+
+/* ============================================================
+   刻度读数（P31 改）
+   ------------------------------------------------------------
+   原来每个三角各挂一个 ::after 读数。现在**同一把尺子上的两个三角
+   共用一个**，位置取两者的中点 —— 因为三角会张开到几百像素远，
+   读数必须独立于三角，不能再挂在其中某一个身上。
+   内容由 js/rulers.js 写：
+     · 准星展开（吸住元素）时 → 两个三角的**间隔像素**
+     · 准星完全合并时        → 准星在该轴上的**坐标**
+   ============================================================ */
+.ruler-read {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9998;
+    font: 9px ui-monospace, monospace;
+    color: var(--accent);
+    white-space: nowrap;
+    /* ★ P32：展开时读数要让开条带并变色，两条都用过渡走过去。
+       （降低动效那条 * { transition-duration: .01ms !important } 会把它压成硬切，
+         这正是我们要的 —— 状态变化保留、过程去掉。） */
+    transition:
+        color 0.35s var(--theme-ease),
+        bottom 0.35s var(--theme-ease),
+        left 0.35s var(--theme-ease);
+}
+
+.ruler-read-x {
+    bottom: calc(var(--ruler-h) + 2px);   /* 让开底尺那 8px */
+    left: 0;
+    transform: translateX(-50%);
+}
+
+.ruler-read-y {
+    left: calc(var(--ruler-w) + 2px);     /* 让开左尺那 8px */
+    top: 0;
     transform: translateY(-50%);
 }
 
-.ruler-marker-x::after {
-    content: attr(data-x);
-    position: absolute;
-    bottom: 5px;
-    left: 50%;
-    transform: translateX(-50%);
-    font: 9px ui-monospace, monospace;
-    color: var(--accent);
+/* ============================================================
+   准星展开 → 两个三角之间"拉出"半透明红带（P32）
+   ------------------------------------------------------------
+   条带本身不写 left/width，全部交给 transform：
+     translateX(x1) scaleX((x2-x1)/100vw)   —— 正好覆盖 [x1, x2]
+   scale 走的是合成器，比改 width 便宜，而且和准星线用的是同一套做法。
+   transform-origin 必须在**左**边（y 带在上边），否则会从中间往两头长，
+   看起来不像"从三角那里拉出来"。
+
+   显隐走 body.crosshair-measuring 这个类（js/crosshair.js 里 syncMeasuring()
+   唯一负责挂/摘）：
+     · 平时 opacity: 0 —— 一个像素都不占
+     · "仪器正在读一个跨度"时淡入，配合准星自己的缓动
+   ★★ 这个类覆盖**两种**状态：吸住某个元素、以及 P40 的拖框量取。
+     两者的表现完全一样（红带 + 读数让开变色 + 读数显示间隔），
+     所以只留一个类 —— 两个状态各写一半迟早会不一致。
+   条带比尺子厚（--band-h = 16px > --ruler-h = 8px），所以它一半压在尺子上、
+   一半探进内容区；读数的"让开"（--read-lift）就是给这多出来的 8px 让位。
+   ============================================================ */
+.ruler-band {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9997;                       /* 尺子之上、三角/读数之下 */
+    background: rgba(225, 25, 25, var(--band-alpha, 0.22));
+    opacity: 0;
+    transition: opacity 0.35s var(--theme-ease);
 }
 
-.ruler-marker-y::after {
-    content: attr(data-y);
+.ruler-band-x {
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: var(--band-h, 16px);
+    transform-origin: left center;       /* 从 x1 那头往右长 */
+}
+
+.ruler-band-y {
+    top: 0;
+    left: 0;
+    width: var(--band-w, 16px);
+    height: 100vh;
+    transform-origin: center top;        /* 从 y1 那头往下长 */
+}
+
+body.crosshair-measuring .ruler-band {
+    opacity: 1;
+}
+
+/* ============================================================
+   拖框时框内那层极淡的主题红（P41）
+   ------------------------------------------------------------
+   和红带同一种做法：CSS 里写死 100vw×100vh，JS 只写
+     translate(x1, y1) scale((x2-x1)/100vw, (y2-y1)/100vh)
+   transform-origin 必须是 0 0 —— 否则它会从中间往外长。
+   ★ 浓度走 --fill-alpha，默认 0.07（"极低"）。想更明显只改那一个数。
+   ★ z-index 在准星线（9995）**之下**：它是底色，不该盖住那四条线。
+   ============================================================ */
+.crosshair-fill {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--accent);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9994;
+    transform-origin: 0 0;
+    transition: opacity 0.18s var(--theme-ease);
+}
+
+body.crosshair-box .crosshair-fill {
+    opacity: var(--fill-alpha, 0.07);
+}
+
+/* 抓取那一刻的"闪光灯"：让框**自己**由红变白再消失（P42）。
+   ★ 闪的是 .crosshair-fill 自己的 opacity + background，不是在它里面套一层 ——
+     父元素的 opacity 会乘到子元素上，套一层的话 0.07 × 0.9 ≈ 0.06，等于没闪。
+   ★ 动画在层叠里高于普通声明，所以这一下会盖过
+     `body.crosshair-box .crosshair-fill` 的透明度，闪得出来。 */
+body.crosshair-box .crosshair-fill.is-flashing {
+    background: #fff;
+    animation: crosshairFlash 0.38s ease-out;
+}
+
+@keyframes crosshairFlash {
+    0% {
+        opacity: 0.05;
+    }
+
+    14% {
+        opacity: 0.92;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+/* ============================================================
+   截图采帧前"清场"（P47）
+   ------------------------------------------------------------
+   JS 在采帧之前给 body 挂 .capture-hide，采完立刻摘掉。
+   · 用 visibility 而不是 opacity：visibility 没有过渡，改的是
+     "画不画"，不会在采样那一帧拍到半透明的中间态。
+   · 也**不动布局** —— display: none 会触发重排，重排中的那一帧
+     正好可能被采到，截出来就是错位的。
+   · 藏起来的全是"仪器"：四条准星线、圆形指针、红框、提示、
+     四个三角、两条红带、两把尺子、两个读数、参考线层。
+     **内容本身一个像素都不动** —— 截出来是这个页面，
+     不是这个页面的仪表盘。
+   ============================================================ */
+body.capture-hide .crosshair-h,
+body.capture-hide .crosshair-v,
+body.capture-hide .crosshair-fill,
+body.capture-hide .crosshair-hint,
+body.capture-hide .cursor-dot,
+body.capture-hide .ruler-marker-x,
+body.capture-hide .ruler-marker-y,
+body.capture-hide .ruler-band,
+body.capture-hide .ruler-read,
+body.capture-hide #ruler-bottom,
+body.capture-hide #ruler-left,
+body.capture-hide #guide-layer {
+    visibility: hidden;
+}
+
+/* ============================================================
+   框画好之后、"等确认"时框中央那行提示（P42）
+   ------------------------------------------------------------
+   颜色用 --text（红底上红字看不清）。
+   位置由 JS 写 transform（框中心 + 夹回视口内），所以这里只管样子。
+   ★ z-index 在准星线（9995）之上：它是给你读的，不该被一条线划过去。
+   ============================================================ */
+.crosshair-hint {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9996;
+    display: none;
+    pointer-events: none;              /* 提示不吃鼠标：底下的 click 才收得到 */
+    font: 10px ui-monospace, monospace;
+    color: var(--text);
+    white-space: nowrap;
+    text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg);
+}
+
+.crosshair-hint.is-on {
+    display: block;
+}
+
+/* 倒计时线：提示下面一条细线，按时限从左缩到右（P44）。
+   ★ 时长走 --box-ttl，由 js/crosshair.js 从 BOX_TTL 写进来 ——
+     一个常量同时决定"多久自动取消"和"这条线多长"，不会各自漂移。
+   ★★ 这条线**只是**指示，不驱动取消：取消走 JS 的 setTimeout。
+     要是拿 animationend 去取消，降低动效那条
+     `* { animation-duration: .01ms !important }` 会让它瞬间跑完 →
+     框瞬间消失。所以两件事必须分开。 */
+.crosshair-hint::after {
+    content: "";
     position: absolute;
-    bottom: 0px;
-    left: 50%;
-    transform: translateX(50%);
-    font: 9px ui-monospace, monospace;
-    color: var(--accent);
+    left: 0;
+    right: 0;
+    bottom: -5px;
+    height: 2px;
+    background: currentColor;
+    opacity: 0.5;
+    transform-origin: left center;
+    transform: scaleX(0);
+}
+
+.crosshair-hint.is-on::after {
+    animation: hintCountdown var(--box-ttl, 3s) linear forwards;
+}
+
+@keyframes hintCountdown {
+    from {
+        transform: scaleX(1);
+    }
+
+    to {
+        transform: scaleX(0);
+    }
+}
+
+/* ★★ P48：降低动效下**框也一样会自动取消**（你确认要保留这个 3 秒），
+   所以这条线不能再藏着了。
+   - 不能让它照常动：`prefers-reduced-motion` 那条全局规则会把
+     animation-duration 压到 .01ms，它会在第一帧里瞬间跑完 ——
+     比"不动"还糟，是一条**空线**。
+   - 也不能藏起来：时限现在是真的，"框会自己消失"这件事就**完全没有
+     视觉提示**了，用户只会觉得是 bug。
+   - 所以：**保留一条静止的满格线**。它不含任何动效，但确实在说
+     "这里有时限"。读数（还剩多少）在降低动效下就不提供了 ——
+     那必须靠动效表达。
+   ★ 只说的是"有时限"，不写具体秒数：那个数在 js 的 BOX_TTL 里，
+     这边跟着 --box-ttl 走（上面那条 animation 用的就是它）。 */
+@media (prefers-reduced-motion: reduce) {
+    .crosshair-hint.is-on::after {
+        animation: none;
+        transform: scaleX(1);
+    }
+}
+
+body.crosshair-measuring .ruler-read {
+    color: var(--text);                  /* 红底上红字看不清，换成高对比的前景色 */
+}
+
+body.crosshair-measuring .ruler-read-x {
+    bottom: calc(var(--ruler-h) + 2px + var(--read-lift, 18px));
+}
+
+body.crosshair-measuring .ruler-read-y {
+    left: calc(var(--ruler-w) + 2px + var(--read-lift, 18px));
+}
+
+/* 拖框量取复制成功后的回执（P40/P41）——
+   在**松手的位置**生一句会淡出的字。元素是临时的：js/crosshair.js 生成、
+   animationend 时自己 remove（和 .click-ripple 同一套）。
+   ★ 位置由 JS 写死在松手那一刻的屏幕坐标上，之后不跟着鼠标走。 */
+.cursor-toast {
+    position: fixed;
+    pointer-events: none;
+    z-index: 99999;                      /* 和圆形指针同级：回执不该被准星压住 */
+    font: 10px ui-monospace, monospace;
+    color: var(--text);
+    white-space: nowrap;
+    /* 压在任意内容上都要读得清 */
+    text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg);
+    animation: cursorToast 1s ease forwards;
+}
+
+/* 出现很快、然后慢慢淡掉；位置全程不动（"固定在原位"） */
+@keyframes cursorToast {
+    0%   { opacity: 0; }
+    12%  { opacity: 1; }
+    100% { opacity: 0; }
 }
 
 @media (max-width: 768px) {
 
     .ruler-marker-x,
-    .ruler-marker-y {
+    .ruler-marker-y,
+    .ruler-read,
+    .ruler-band {
         display: none;
     }
 }
@@ -2238,7 +2689,7 @@ video {
     transition: opacity 0.2s ease;
     width: calc(100vw - var(--nav-width));
     height: 100vh;
-    z-index: 0;
+    z-index: 999;
     pointer-events: none;
     display: block;
 }
@@ -2620,10 +3071,50 @@ body.intro-done .cursor-dot {
         display: none;
     }
 
-    /* 制图框只留静态部分 */
-    .draft-frame .df-name::before {
+    /* 制图框只留静态部分。
+       ★★ 选择器必须和基础规则**一模一样**（.df-name::before）。
+       这里原来写的是 `.draft-frame .df-name::before`，是个**永不匹配的死选择器**：
+       · .draft-frame 里只有四角刻线（见 js/draft-layer.js，innerHTML 就 4 个
+         .df-corner）；
+       · 那颗闪点所在的 .df-name 在 .df-strip 里，而 .df-strip 是插进
+         .nav-container 的，**根本不在 .draft-frame 里面**。
+       结果是这条 animation: none 从没生效过，dfBlink 仍然是 1.6s infinite，
+       再被下面那条 * { animation-duration: .01ms !important } 一压 ——
+       0.01ms 周期 + 无限循环 + step-end = 那颗红点每秒闪十万次，
+       在减少动效下变成一片高频频闪。 */
+    .df-name::before {
         animation: none;
     }
+
+    /* ★ P27 补齐：剩下的常驻 infinite 动效，理由同上（0.01ms + infinite = 乱跳）。
+       P26 待办里点了四条：navGlow / tileFloat / blobPulse / winLoading。
+       逐条核对下来只有前三条真的要补 —— winLoading 是 .win-loading-bar::after，
+       它已经在文件末尾那份「浮窗：降低动效」里关掉了（同一选择器），
+       在这里再写一遍是重复的。 */
+    .navbar::after {            /* navGlow  —— 导航栏右缘那条红呼吸光带 */
+        animation: none !important;
+    }
+
+    .mosaic-tile.float {        /* tileFloat —— 马赛克方块的漂浮 */
+        animation: none !important;
+    }
+
+    .blob {                     /* blobPulse + blobWobble —— 液滴的缩放与蠕动 */
+        animation: none !important;
+    }
+
+    /* #about 那一节目前是注释掉的，所以这条今天碰不到；
+       但 hover 触发时同样是 infinite + 0.01ms，留着就是坑，一起关掉。 */
+    #about .container.is-hot::before {   /* borderFlow —— hover 时的流动边框 */
+        animation: none !important;
+    }
+
+    /* 说明：这些都是"关掉动、保留静态外观"，不是把元素藏起来。
+       · .navbar::after 原来在 opacity .4→1 之间呼吸，关掉后停在基态 1 ——
+         也就是那条红边会比动的时候略亮一点。想压回去就在这里加
+         `opacity: .7;`。
+       · .mosaic-tile 的 transform、.blob 的 scale / border-radius 都会回到
+         各自的基态，不会留下"动画演到一半"的错位。 */
 
     /* ★ 例外：主题换色不是"动效"—— 它不产生位移或缩放，不会引起前庭不适，
        而硬切一下对光敏感的人反而更刺眼。所以这里把交叉淡入恢复回来。
@@ -3356,7 +3847,7 @@ body.window-open .cursor-dot {
     transition: color 0.2s;
 }
 
-.card[data-work]:hover .card-open {
+.card[data-work].is-hot .card-open {
     color: var(--text);
 }
 

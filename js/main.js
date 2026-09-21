@@ -3,7 +3,8 @@ console.log("主页已加载...");
 /* ===== 开屏锁 ===== */
 document.body.classList.add("locked");
 
-window.crosshairPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+/* 注：准星（四条线 + 吸边）已经拆到 js/crosshair.js（P32）。
+   它跟开屏状态机没有耦合，只是一套指针逻辑。 */
 
 /* ===== 读取总时长 ===== */
 const T = window.SPLASH_TIMELINE || {};
@@ -25,8 +26,21 @@ function finishIntro(log) {
     if (introFinished) return;
     introFinished = true;
     document.querySelectorAll(".splash-遮罩, .splash-渐显, .splash-化开, .splash-网点, .welcome-splash, .welcome-tagline").forEach(el => el.remove());
+    /* ★★ 这两个 class 必须**一起**加，少一个准星就会停在满屏。
+       准星出生时是个铺满视口的实心矩形（.crosshair-h/-v 是 100vw×100vh），
+       「变细成十字」是靠 body.crosshair-active 给的那条
+       transform: scaleY(--crosshair-h-scale) / scaleX(--crosshair-v-scale)；
+       crosshair-active-done 只负责把过渡时长设成 0s（即"直接跳到终态"）。
+       所以只加 -done 不加 -active，transform 从头到尾就是基础规则的 scaleY(1)
+       —— 准星会一直是一块盖住整页的实心色块。
+       ★ 这正是"降低动效"那条路径之前的 bug：它直接调 finishIntro()，
+         从来没加过 crosshair-active，于是开了减少动效的用户看到的是一整屏
+         准星色（深色主题 #191919 / 浅色主题 #c8c8c8）而不是一个十字。
+       ★ 放在 finishIntro() 里而不是各分支各写一遍：这条路径同时也是
+         「等字体兜底」那条，幂等（已经加过再加是无害的），
+         正常路径走到这里时 3.0s 早就加过了。 */
     // ★ intro-done 让 .page-zoom 交还 transform，fixed 层才重新相对视口定位
-    document.body.classList.add("crosshair-active-done", "intro-done");
+    document.body.classList.add("crosshair-active", "crosshair-active-done", "intro-done");
     document.body.classList.remove("locked");
     // ★ 放行闸门：所有「等开屏结束」的初始化在这里统一执行
     if (window.World) World.openGate();
@@ -338,143 +352,6 @@ if (REDUCE_MOTION) {
 })();
 
 /* ============================================================
-   十字准星光标
-   ============================================================ */
-(function () {
-    const h = document.querySelector(".crosshair-h");
-    const v = document.querySelector(".crosshair-v");
-    if (!h || !v) return;
-
-    /* ----- 动态线宽：保证物理 1px / 2px ----- */
-    function updateScale() {
-        const vh = window.innerHeight;
-        const vw = window.innerWidth;
-        const root = document.documentElement;
-        root.style.setProperty("--crosshair-h-scale", 1 / vh);
-        root.style.setProperty("--crosshair-v-scale", 1 / vw);
-    }
-    if (window.World) {
-        World.onLayout(updateScale);            // 注册时立刻跑一次
-    } else {
-        updateScale();
-        window.addEventListener("resize", updateScale);
-    }
-
-    /* ----- 缓动跟随参数 -----
-       EASE = 60fps 基准下每帧的追赶比例。
-         0.10 = 现在的手感（约 0.17s 才追到 63%，是刻意的顺滑拖尾）
-         1    = 完全实时，准星直接钉在鼠标上、不再缓动
-       ★ 注意：尺子三角、以及以后任何「跟随准星」的元素，都是订阅下面
-         这个位置推送的，所以它们会自动继承这里的手感。
-         想让整套都实时，把 0.10 改成 1 就行。 */
-    const EASE = 0.10;
-
-    let mx = window.innerWidth / 2;
-    let my = window.innerHeight / 2;
-    let cx = mx;
-    let cy = my;
-    let frozen = false;
-    let rafId = null;
-    let lastCrossTime = 0;
-
-    /* ----- 准星位置订阅（供尺子三角等元素零延迟跟随）-----
-       ★ 为什么不能让跟随者去 World.onFrame 里轮询 window.crosshairPos：
-         准星跑在自己的 rAF 回调里，World 是另一个 rAF 回调；
-         同一帧里谁先执行由注册顺序决定。如果 World 先跑，跟随者读到的
-         就是上一帧的位置 —— 静止时看不出来，但鼠标快速移动时这个
-         「一帧错位」会按速度放大成肉眼可见的拖尾。
-         改成由准星更新后直接推送，顺序问题就不存在了。 */
-    const posSubs = new Set();
-
-    window.onCrosshair = function (fn) {
-        posSubs.add(fn);
-        fn(cx, cy);                                  // 注册时先同步一次
-        return function () { posSubs.delete(fn); };
-    };
-
-    function applyOrigin() {
-        h.style.transformOrigin = `0 ${cy}px`;
-        v.style.transformOrigin = `${cx}px 0`;
-
-        // 保留旧接口（外面可能只是只读引用）
-        if (window.crosshairPos) {
-            window.crosshairPos.x = cx;
-            window.crosshairPos.y = cy;
-        }
-        // ★ 同一帧内推送给订阅者，零延迟
-        for (const fn of posSubs) fn(cx, cy);
-    }
-
-    function step(now) {
-        /* ★ 同样按 dt 归一化，否则高刷屏上准星会比 60Hz 跟得更紧 */
-        const dt = lastCrossTime ? Math.min((now - lastCrossTime) / (1000 / 60), 4) : 1;
-        lastCrossTime = now;
-        const k = 1 - Math.pow(1 - EASE, dt);
-
-        cx += (mx - cx) * k;
-        cy += (my - cy) * k;
-
-        if (Math.abs(mx - cx) < 0.1 && Math.abs(my - cy) < 0.1) {
-            cx = mx;
-            cy = my;
-            applyOrigin();
-            rafId = null;
-            return;
-        }
-
-        applyOrigin();
-        rafId = requestAnimationFrame(step);
-    }
-
-    applyOrigin();
-
-    window.addEventListener("mousemove", (e) => {
-        mx = e.clientX;
-        my = e.clientY;
-        if (frozen) return;
-        if (rafId === null) { lastCrossTime = 0; rafId = requestAnimationFrame(step); }
-    }, { passive: true });
-
-    /* ----- 收缩期间冻结跟随 ----- */
-    const observer = new MutationObserver(() => {
-        const active = document.body.classList.contains("crosshair-active");
-        const done = document.body.classList.contains("crosshair-active-done");
-
-        if (active && !done && !frozen) {
-            //frozen = true;
-            cx = 0;
-            cy = 0;
-            mx = 0;
-            my = 0;
-            applyOrigin();
-        }
-        if (done && frozen) {
-            frozen = false;
-        }
-    });
-    observer.observe(document.body, {
-        attributes: true,
-        attributeFilter: ["class"],
-    });
-
-    /* ----- 鼠标离开 / 进入窗口 ----- */
-    document.addEventListener("mouseleave", () => {
-        document.body.classList.add("crosshair-hidden");
-    });
-    document.addEventListener("mouseenter", () => {
-        document.body.classList.remove("crosshair-hidden");
-    });
-
-    /* ----- 悬停交互元素时变色 ----- */
-    document.addEventListener("mouseover", (e) => {
-        const interactive = e.target.closest(
-            "a, button, .btn, .card, [role='button']"
-        );
-        document.body.classList.toggle("crosshair-hover", !!interactive);
-    });
-})();
-
-/* ============================================================
    液滴层视差
    ------------------------------------------------------------
    原来这里是一个独立的 rAF 循环，每帧给 .liquid-bg 写 transform。
@@ -482,36 +359,8 @@ if (REDUCE_MOTION) {
    （等价于原来的 /1.4），--px 由 world.js 写入的 --scroll-x 驱动。
    ============================================================ */
 
-(function cursorDot() {
-    const dot = document.querySelector('.cursor-dot');
-    if (!dot || !window.World) return;
-
-    /* ★ 原来自己开了一个 rAF 无限循环，鼠标不动也每帧写 transform。
-       现在挂到 World 上，并且位置稳定后就不再碰 DOM。
-       （曾经在这里做过「点击阶段式收缩」和「开屏时当整屏红幕」，
-         两套都要抢 transform，已按需求撤掉 —— 这个模块只负责位置。） */
-    let tx = window.innerWidth / 2;
-    let ty = window.innerHeight / 2;
-    let cx = tx, cy = ty;
-    let lastDrawX = NaN, lastDrawY = NaN;
-
-    window.addEventListener('mousemove', (e) => {
-        tx = e.clientX;
-        ty = e.clientY;
-    }, { passive: true });
-
-    World.onFrame((dt) => {
-        const k = 1 - Math.pow(1 - 0.8, dt);
-        cx += (tx - cx) * k;
-        cy += (ty - cy) * k;
-        if (Math.abs(tx - cx) < 0.05 && Math.abs(ty - cy) < 0.05) { cx = tx; cy = ty; }
-
-        if (cx === lastDrawX && cy === lastDrawY) return;   // 没动就不写 DOM
-        lastDrawX = cx;
-        lastDrawY = cy;
-        dot.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
-    });
-})();
+/* 注：圆形指针（.cursor-dot）也搬去 js/crosshair.js 了（P33）——
+   它和准星共用同一套"鼠标位置"语义，放一起更好对照。 */
 
 /* 注：这里原本给 #about .container 加 .shine 类，但 style.css 里从来没有
    .shine 这条规则，而且 mouseenter 里还做了一次强制 reflow

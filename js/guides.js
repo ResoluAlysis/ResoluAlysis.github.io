@@ -112,8 +112,19 @@
     World.onLayout(function () { resize(); draw(); });   // 注册时立刻跑一次；含字体加载完成
     World.onScroll(draw);                                // 注册时会立刻用当前 scrollX 画一次
 
-    // 放在 guides.js 末尾
+    /* ============ G 键开关（P48：这里同时是框选的闸门） ============
+       ★ 状态挂在 body 的类上，不让 crosshair.js 跨文件读这里的变量 ——
+         两边各存一份状态迟早会对不上。
+       ★★ `guides-ready` 这个标记是**给 crosshair.js 兜底用的**：
+         上面那个守卫（!canvas || !World）一旦成立，本文件后面全都不会执行，
+         G 键处理器根本不存在，`guides-on` 永远是 false。
+         crosshair.js 会把"框选"绑在参考网格上 —— 没有这个标记，
+         它会认为"网格功能不可用"，于是**放开闸门**（fail-open）。
+         不打这个标记的话，参考线挂掉会顺手把框选也永久禁掉，且不报错。 */
+    document.body.classList.add('guides-ready');
+
     let visible = false;
+    document.body.classList.toggle('guides-on', visible);
 
     document.addEventListener('keydown', (e) => {
     const tag = document.activeElement?.tagName;
@@ -123,6 +134,7 @@
         if (e.key.toLowerCase() === 'g') {
             visible = !visible;
             canvas.style.opacity = visible ? '1' : '0';
+            document.body.classList.toggle('guides-on', visible);
         }
     });
 })();

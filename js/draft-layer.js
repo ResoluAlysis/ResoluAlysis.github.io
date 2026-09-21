@@ -62,7 +62,11 @@
         xEl.textContent = scrollX.toFixed(2);
         pctEl.textContent = Math.round(p * 100) + '%';
         fillEl.style.transform = 'scaleY(' + p.toFixed(4) + ')';   // 自下而上
-        dotEl.style.bottom = (p * 100).toFixed(3) + '%';
+        /* ★ 推进点也走 transform（不写 style.bottom）。
+           原因见 style.css 的 .df-bar b：bottom 是布局属性，transform 是合成器属性，
+           两个混用的话，主线程一忙它们就会错开，表现成"进度条在走、点不跟"。
+           这里只是把进度写进一个 CSS 变量，剩下的交给 CSS 的 translateY。 */
+        dotEl.style.setProperty('--df-p', (p * 100).toFixed(3) + '%');
     }
 
     function measure() {

@@ -5,12 +5,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title> ResoluAlysis | 个人页 </title>
-    <!-- 字体预加载：HuXiaoBo.otf 有 3.2MB。走 CSS 里的 @font-face 意味着
-         浏览器必须先把 CSS 下载、解析、匹配到规则，才开始下字体。
-         提前 preload 能明显缩短「先用替代字体渲染、再突然换成 HuXiaoBo」
-         的那个窗口。字体请求是 CORS 模式，所以 crossorigin 不能省。 -->
-    <link rel="preload" href="assets/fonts/HuXiaoBo.otf" as="font" type="font/otf" crossorigin />
-    <link rel="preload" href="assets/fonts/Crunch-Light-2.ttf" as="font" type="font/ttf" crossorigin />
+    <!-- 字体预加载：走 CSS 里的 @font-face 意味着浏览器必须先把 CSS 下载、
+         解析、匹配到规则，才开始下字体。提前 preload 能明显缩短「先用替代
+         字体渲染、再突然换成 HuXiaoBo」的那个窗口。字体请求是 CORS 模式，
+         所以 crossorigin 不能省。
+         ★ P27：这里原来 preload 的是 HuXiaoBo.otf（3.2MB）。现在站点用的是
+           子集化版本 HuXiaoBo-subset.woff2（30KB，原体积的 0.96%）——
+           preload 必须跟着换成它，否则又会把 3.2MB 原字体拉下来，
+           等于白裁。生成脚本：node _dev/subset-font.js
+         ★ 顺带删掉了 Crunch-Light-2.ttf 的 preload：它只给数字时钟用，
+           而数字时钟在 P26 已经整个移除，这个 preload 变成纯浪费。 -->
+    <link rel="preload" href="assets/fonts/HuXiaoBo-subset.woff2" as="font" type="font/woff2" crossorigin />
     <!-- 主题引导：必须在首次绘制前决定亮/暗，否则刷新时会先闪一下深色（FOUC）。
          类加在 <html> 上，对应 CSS 的 :root.light -->
     <script>
@@ -41,8 +46,27 @@
         <!-- <canvas id="particle-layer" aria-hidden="true"></canvas> -->
         <canvas id="ruler-bottom" aria-hidden="true"></canvas>
         <canvas id="ruler-left" aria-hidden="true"></canvas>
-        <div class="ruler-marker-x"></div>
-        <div class="ruler-marker-y"></div>
+        <!-- 刻度尺指示三角：**每条准星线配一个**（P31）——
+             底尺两个（跟两条垂直线的 x），左尺两个（跟两条水平线的 y）。
+             四个都是直角三角形，朝"离开准星框"的方向伸出去（见 style.css）。
+             data-cross 既是给人和自检看的标签，也是 CSS 认形状的依据
+             （[data-cross="x1"] = 向左上、x2 = 向右上、y1 = 向上右、y2 = 向下右）。
+             JS 按 .ruler-marker-x / .ruler-marker-y 的**出现顺序**取。 -->
+        <div class="ruler-marker-x" data-cross="x1"></div>
+        <div class="ruler-marker-x" data-cross="x2"></div>
+        <div class="ruler-marker-y" data-cross="y1"></div>
+        <div class="ruler-marker-y" data-cross="y2"></div>
+        <!-- 准星展开时从两个三角中间"拉出来"的半透明红带（P32）——
+             宽度/位置由 js/rulers.js 写 transform，淡入淡出交给
+             body.crosshair-snap 这个类（见 style.css）。 -->
+        <div class="ruler-band ruler-band-x" aria-hidden="true"></div>
+        <div class="ruler-band ruler-band-y" aria-hidden="true"></div>
+        <!-- 刻度读数：同一把尺子上的两个三角**共用一个**，位置取两者中点。
+             准星展开时显示两个三角的间隔像素，完全合并时显示坐标。
+             展开过程中它会从条带上让开、并逐渐变色（方便读数）。
+             数值由 js/rulers.js 写。 -->
+        <div class="ruler-read ruler-read-x" aria-hidden="true"></div>
+        <div class="ruler-read ruler-read-y" aria-hidden="true"></div>
         <!-- 标题下划线：固定在导航栏右边缘、不随文字滑走，长度由 JS 写 scaleX。
              ★ 必须放在脚本之前 —— 控件脚本在文档流里就地执行，
                放它后面的话 querySelector 拿到 null，整段就会静默 return。 -->
@@ -51,9 +75,26 @@
         <canvas id="guide-layer" aria-hidden="true"></canvas>
 
 
-        <!-- 鼠标指针 -->
-        <div class="crosshair-h"></div>
-        <div class="crosshair-v"></div>
+        <!-- 鼠标指针：**四条线**（P31）——
+             两条垂直 + 两条水平，共用同一份跟随缓动与动画参数。
+             平时四条都收在鼠标处（看起来就是原来那个单十字，无变化）；
+             鼠标进入大块（.card / .media-panel / .btn）时，两条垂直线吸到
+             它的左右边缘、两条水平线吸到它的上下边缘，四条线围成一个框。
+             ★ 顺序有意义：第 1 个是 x1/y1（左 / 上），第 2 个是 x2/y2（右 / 下）。
+             ★ 仍然必须排在脚本之前解析（见下面 home-underline 那条注释）。 -->
+        <div class="crosshair-h" data-cross="h1"></div>
+        <div class="crosshair-h" data-cross="h2"></div>
+        <div class="crosshair-v" data-cross="v1"></div>
+        <div class="crosshair-v" data-cross="v2"></div>
+        <!-- 拖框时框内那层极淡的主题红（P41）——
+             和红带同一种做法：CSS 里写死 100vw×100vh，JS 只写
+             "挪到左上角 + 缩到框那么大"。平时 opacity: 0，一个像素都不占。
+             ★ 它是装饰，所以不参与"结构不对就整套不启用"的守卫。 -->
+        <div class="crosshair-fill" aria-hidden="true"></div>
+        <!-- 框画好之后停在"等确认"时，框中央那行提示（P42）——
+             文案由 js/crosshair.js 写（payload 变了它就要跟着变）。
+             位置在 JS 里摆到框中心、并夹回视口内。 -->
+        <div class="crosshair-hint" aria-hidden="true"></div>
         <!-- 开屏第二层：纯色层（在红幕之下、准星之上）——
              红幕开始往左收 0.2s 后，它从 50% 那条中线向上下化开成透明；
              版式与关键帧见 style.css 的 .splash-化开 -->
@@ -72,11 +113,11 @@
 
         <!-- 秒针 -->
         <svg class="circle-ticks circle-ticks-1" viewBox="0 0 200 200"
-            data-count="360" data-major="6" data-len-major="2" data-len-minor="1"
+            data-count="360" data-major="6" data-len-major="4" data-len-minor="1"
             data-width-major="0.1" data-width-minor="0.1"></svg>
         <!-- 分针 -->
         <svg class="circle-ticks circle-ticks-2" viewBox="0 0 200 200"
-            data-count="360" data-major="6" data-len-major="3" data-len-minor="1.5"
+            data-count="360" data-major="6" data-len-major="3" data-len-minor="1"
             data-width-major="0.2" data-width-minor="0.1"></svg>
         <!-- 时针 -->
         <svg class="circle-ticks circle-ticks-3" viewBox="0 0 200 200"
@@ -216,7 +257,7 @@
                         <div class="media-panel-main">
                             <h3 class="media-panel-title">绘画</h3>
                             <p class="media-panel-desc">手绘 / 速写 / 数字绘画</p>
-                            <span class="media-panel-meta">12 幅</span>
+                            <span class="media-panel-meta">X 幅</span>
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="绘画面板底图（占位图）" />
@@ -229,7 +270,7 @@
                         <div class="media-panel-main">
                             <h3 class="media-panel-title">建模</h3>
                             <p class="media-panel-desc">Blender / 硬表面 / 场景搭建</p>
-                            <span class="media-panel-meta">8 个</span>
+                            <span class="media-panel-meta">X 个</span>
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="建模面板底图（占位图）" />
@@ -242,7 +283,7 @@
                         <div class="media-panel-main">
                             <h3 class="media-panel-title">编曲</h3>
                             <p class="media-panel-desc">作曲 / 编曲 / 混音</p>
-                            <span class="media-panel-meta">6 首</span>
+                            <span class="media-panel-meta">X 首</span>
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="编曲面板底图（占位图）" />
@@ -255,7 +296,7 @@
                         <div class="media-panel-main">
                             <h3 class="media-panel-title">游戏开发</h3>
                             <p class="media-panel-desc">Unity / C# / 玩法原型</p>
-                            <span class="media-panel-meta">2 个</span>
+                            <span class="media-panel-meta">X 个</span>
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="游戏开发面板底图（占位图）" />
@@ -308,6 +349,10 @@
         <script src="js/blobs.js"></script>
         <script src="js/mosaic.js"></script>
         <script src="js/main.js"></script>
+        <!-- ★ 准星（四条线 + 吸边）自成一块，P32 从 main.js 拆了出来。
+             必须排在 rulers.js 之前：尺子三角和红带是靠它暴露的
+             window.onCrosshair 订阅位置的。 -->
+        <script src="js/crosshair.js"></script>
         <script src="js/home-underline.js"></script>
         <script src="js/draft-layer.js"></script>
         <script src="js/rulers.js"></script>

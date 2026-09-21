@@ -1,0 +1,13 @@
+{
+  "name": "resolualysis-dev",
+  "private": true,
+  "version": "1.0.0",
+  "description": "开发工具依赖（不进站点）。只需要 subset-font 一个包：字体子集化。",
+  "scripts": {
+    "subset": "node subset-font.js",
+    "check": "node check.js"
+  },
+  "devDependencies": {
+    "subset-font": "^2.3.0"
+  }
+}

@@ -125,43 +125,123 @@
 })();
 
 /* ============================================================
-   刻度尺位置指示三角
+   刻度尺位置指示三角 + 读数（P31：每条准星线配一个三角）
+   ------------------------------------------------------------
+   底尺两个三角跟两条垂直线的 x（x1 左 / x2 右），左尺两个跟两条水平线
+   的 y（y1 上 / y2 下）。四个都是**直角三角形**（见 style.css），
+   朝"离开准星框"的方向伸出去：
+     x1 向左上、x2 向右上、y1 向上右、y2 向下右。
+   所以每个三角"那条腿"（代表线位置的那条边）在盒子上的位置不同：
+     x1 的腿在盒子右边缘 → 元素要往负方向挪整个宽度（translateX(-100%)）
+     x2 的腿在盒子左边缘 → 不偏移
+     y1 的腿在盒子下边缘 → translateY(-100%)
+     y2 的腿在盒子上边缘 → 不偏移
+   这就是下面 chans 里 anchor 字段的意思。
+
+   读数：**同一把尺子上的两个三角共用一个**，放在两者中点。
+     · 准星展开（吸住元素）时 → 两个三角的间隔像素
+     · 准星完全合并时        → 准星在该轴上的坐标
+   读数不能再挂在三角身上（两者会张开到几百像素远），所以是独立元素。
    ============================================================ */
 (function rulerMarkers() {
-    const mkX = document.querySelector('.ruler-marker-x');
-    const mkY = document.querySelector('.ruler-marker-y');
-    if (!mkX || !mkY || !window.World) return;
+    /* ★ 按**出现顺序**取，第 1 个跟 1 号。拿不到整整两个就整套不启用。 */
+    const xs = [...document.querySelectorAll('.ruler-marker-x')];
+    const ys = [...document.querySelectorAll('.ruler-marker-y')];
+    const rdX = document.querySelector('.ruler-read-x');
+    const rdY = document.querySelector('.ruler-read-y');
+    const bdX = document.querySelector('.ruler-band-x');
+    const bdY = document.querySelector('.ruler-band-y');
+    if (xs.length !== 2 || ys.length !== 2 ||
+        !rdX || !rdY || !bdX || !bdY || !window.World) return;
 
-    let lastX = null, lastY = null;
-    let lastRx = null, lastRy = null;
+    /* anchor: 'end' = 代表线位置的那条腿在盒子末端，要往负方向挪 100% */
+    const chans = [
+        { el: xs[0], axis: 'x', i: 0, anchor: 'end' },
+        { el: xs[1], axis: 'x', i: 1, anchor: 'start' },
+        { el: ys[0], axis: 'y', i: 0, anchor: 'end' },
+        { el: ys[1], axis: 'y', i: 1, anchor: 'start' },
+    ].map((c) => Object.assign(c, { last: null }));
 
-    function place(x, y) {
-        if (x === lastX && y === lastY) return;   // 位置没变就一个 DOM 都不碰
+    let lastMidX = null, lastMidY = null;
+    let lastTxtX = null, lastTxtY = null;
+    let lastBandX = null, lastBandY = null;
 
-        lastX = x;
-        lastY = y;
+    function place(x1, x2, y1, y2) {
+        /* ---------- 三角 ---------- */
+        const vals = { x: [x1, x2], y: [y1, y2] };
+        for (const c of chans) {
+            const v = vals[c.axis][c.i];
+            if (v === c.last) continue;          // 这个三角没动，别碰 DOM
+            c.last = v;
 
-        // translate(-50%) 保持三角形自身居中
-        mkX.style.transform = `translateX(${x}px) translateX(-50%)`;
-        mkY.style.transform = `translateY(${y}px) translateY(-50%)`;
+            const A = c.axis.toUpperCase();
+            c.el.style.transform = c.anchor === 'end'
+                ? `translate${A}(${v}px) translate${A}(-100%)`
+                : `translate${A}(${v}px)`;
+        }
 
-        /* 数字标签走的是 content: attr(data-x)，改 dataset 会让伪元素重算样式；
-           所以只在整数位真的变了时才写（原来是每帧无条件写）。 */
-        const rx = Math.round(x), ry = Math.round(y);
-        if (rx !== lastRx) { mkX.dataset.x = rx; lastRx = rx; }
-        if (ry !== lastRy) { mkY.dataset.y = ry; lastRy = ry; }
+        /* ---------- 读数：中点 + 内容 ---------- */
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        if (midX !== lastMidX) {
+            lastMidX = midX;
+            rdX.style.transform = `translateX(${midX}px) translateX(-50%)`;
+        }
+        if (midY !== lastMidY) {
+            lastMidY = midY;
+            rdY.style.transform = `translateY(${midY}px) translateY(-50%)`;
+        }
+
+        /* ---------- 读数：中点 + 内容 ----------
+           ★ P38/P40：读数显示什么，看的是**仪器有没有在读一个跨度**
+             （body.crosshair-measuring —— 吸住元素和拖框量取都是它），
+             不是"两条线合拢了没有"。所以**一松手就立刻变回中点坐标**，
+             不用等它们动画收回原位 —— 那个等待期里显示一个正在缩小的
+             间隔数字没有意义，而中点坐标是此刻读数所在的位置，一直是真的。
+             测量中 → 两个三角的间隔像素（顺带就是框 / 元素的宽高）；
+             其余   → 中点坐标（读数本来就摆在中点上，标签和位置自洽）。
+           判据用 class 而不是让 crosshair.js 多传一个参数：
+           这个类本来就是"在读跨度没有"的唯一出口，读它等于读同一个事实，
+           也省得再改一次订阅签名。 */
+        const measuring = document.body.classList.contains("crosshair-measuring");
+        const gapX = Math.abs(x2 - x1);
+        const gapY = Math.abs(y2 - y1);
+        const txtX = measuring ? String(Math.round(gapX)) : String(Math.round(midX));
+        const txtY = measuring ? String(Math.round(gapY)) : String(Math.round(midY));
+
+        /* 只在文字真的变了时才写 —— 改 textContent 会让浏览器重排这一小块 */
+        if (txtX !== lastTxtX) { lastTxtX = txtX; rdX.textContent = txtX; }
+        if (txtY !== lastTxtY) { lastTxtY = txtY; rdY.textContent = txtY; }
+
+        /* ---------- 条带：从 x1/y1 那头拉出来，正好盖住 [x1, x2] / [y1, y2] ----------
+           CSS 里条带的宽度写的是 100vw、高度 100vh，所以 scale 的比率就是
+           「间隔 ÷ 视口」。★★ transform-origin 在 CSS 里钉死了左边 / 上边，
+           否则它会从中间往两头长，看起来不像"从三角那里拉出来"。
+           用 transform 而不是 left/width：走合成器、不触发布局，
+           而且和准星线用的是同一套做法。
+           显隐不在这里管 —— 那是 body.crosshair-snap 的活（CSS 管淡入淡出）。 */
+        const vw = window.innerWidth || 1;
+        const vh = window.innerHeight || 1;
+        const tx = `translateX(${x1.toFixed(2)}px) scaleX(${(Math.max(0, x2 - x1) / vw).toFixed(6)})`;
+        const ty = `translateY(${y1.toFixed(2)}px) scaleY(${(Math.max(0, y2 - y1) / vh).toFixed(6)})`;
+        if (tx !== lastBandX) { lastBandX = tx; bdX.style.transform = tx; }
+        if (ty !== lastBandY) { lastBandY = ty; bdY.style.transform = ty; }
     }
 
-    /* ★ 直接订阅准星位置（main.js 在 applyOrigin() 里同一帧推送），
+    /* ★ 直接订阅准星位置（main.js 在 apply() 里同一帧推送），
        而不是在 World.onFrame 里轮询 —— 轮询会引入一帧错位，
-       鼠标快速移动时三角形会明显拖在准星后面。 */
+       鼠标快速移动时三角形会明显拖在准星后面。
+       ★ P31：签名从 (x, y) 变成 (x1, x2, y1, y2)。 */
     if (window.onCrosshair) {
         window.onCrosshair(place);
     } else {
         // 兜底：没有订阅接口（准星元素缺失等）时退回轮询
         World.onFrame(() => {
             const p = window.crosshairPos;
-            if (p) place(p.x, p.y);
+            if (!p) return;
+            const p2x = (p.x2 === undefined) ? p.x : p.x2;
+            const p2y = (p.y2 === undefined) ? p.y : p.y2;
+            place(p.x, p2x, p.y, p2y);
         });
     }
 })();

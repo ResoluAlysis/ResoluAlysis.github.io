@@ -81,7 +81,11 @@
 
     /* 量出「每 1px 字号对应多少渲染宽度 / 墨迹高度」 */
     function measure(str, letterSpacingEm) {
-        measureCtx.font = '400 100px "HuXiaoBo", system-ui, sans-serif';
+        /* ★ 这里的字体栈必须和 CSS 里 .welcome-splash 的那条**完全一致**：
+           量出来的比例直接决定 --welcome-fs / --tagline-fs / 拉伸倍数，
+           量的字体和渲染的字体只要不是同一套，算出来的字号就是错的。
+           所以 P27 加 "HuXiaoBo-Full" 兜底时，这里也得跟着加。 */
+        measureCtx.font = '400 100px "HuXiaoBo", "HuXiaoBo-Full", system-ui, sans-serif';
         const m = measureCtx.measureText(str);
         const ink = (m.actualBoundingBoxAscent || 0) + (m.actualBoundingBoxDescent || 0);
         const ls = letterSpacingEm * 100 * str.length;
