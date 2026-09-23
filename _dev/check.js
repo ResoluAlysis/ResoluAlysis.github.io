@@ -48,6 +48,30 @@ const codeOnly = (src) => String(src)
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');  // 行注释（避开 https:// ）
 
 /* ============================================================
+   ★ P93：抠出某个 function 的函数体（大括号配对）
+   ------------------------------------------------------------
+   原来这类断言写成 `/function stopGame\(\)[\s\S]{0,220}?xxx/` ——
+   "从函数头往后数 220 个字里有没有这句"。P93 在 stopGame 开头插了
+   "退全屏"那一段之后，四条老断言一起变假红 ✗（代码没坏，是断言太脆）。
+   数距离本来就是在猜：这里改成**先抠出函数体、再在里面找** ——
+   函数里以后插什么都不会误报，而"跑到隔壁函数里去找"这种事也不会再发生 ✓
+   （输入必须已经过 codeOnly()：注释剥掉后大括号才配得准）。
+   ============================================================ */
+const fnBody = (src, name) => {
+    const s = String(src);
+    const at = s.indexOf('function ' + name + '(');
+    if (at < 0) return '';
+    const open = s.indexOf('{', at);
+    if (open < 0) return '';
+    let depth = 0;
+    for (let i = open; i < s.length; i++) {
+        if (s[i] === '{') depth++;
+        else if (s[i] === '}') { depth--; if (depth === 0) return s.slice(open + 1, i); }
+    }
+    return '';
+};
+
+/* ============================================================
    0. 源文件编码
    ------------------------------------------------------------
    ★ 这条是被一次真实的翻车逼出来的：用 PowerShell 的 `Get-Content -Raw`
@@ -81,6 +105,8 @@ section('[0] 源文件编码');
     ok('所有源文件都是无 BOM 的合法 UTF-8（' + files.length + ' 个）', !badEnc.length, badEnc.join(', '));
     ok('行尾没有混用（LF / CRLF 各自统一）', !badEol.length, badEol.join(', '));
 })();
+
+/* ============================================================
 
 /* ============================================================
    1. index.html
@@ -138,6 +164,87 @@ section('[1] index.html');
    ============================================================ */
 section('[2] style.css');
 const cssNC = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
+
+/* ============================================================
+   [2a] style.css 的结构自洽（P59）
+   ------------------------------------------------------------
+   缘起：P59 排查"标题字号改了没反应"时，第一件要做的事就是
+   **确认那条规则真的被浏览器读到了**。CSS 的失效方式是**静默**的：
+     · 注释没闭合 → 后面整段被吞掉（规则消失得无声无息）
+     · 花括号不配平 → 后面的规则被并进上一条，整块作废
+     · 文件开头多个 BOM → 第一条规则失效
+   这三件事都不会报错，只会"看起来没生效"。所以每个都钉一条。
+   ============================================================ */
+section('[2a] style.css 的结构自洽（P59）');
+(function cssStructure() {
+    const raw = css;
+    /* ★ 注释配平 */
+    const opens = (raw.match(/\/\*/g) || []).length;
+    const closes = (raw.match(/\*\//g) || []).length;
+    ok('★ 注释标记配平（/* = ' + opens + '，*/ = ' + closes + '）', opens === closes);
+
+    /* ★★ 逐字符扫一遍（认字符串、认注释）：块必须正好配平，
+       而且不能有"深度掉到负数"的多余右花括号。 */
+    let i = 0, depth = 0, minDepth = 0, inComment = false, quote = null;
+    while (i < raw.length) {
+        const c = raw[i], n = raw[i + 1];
+        if (inComment) { if (c === '*' && n === '/') { inComment = false; i += 2; continue; } i++; continue; }
+        if (quote) { if (c === '\\') { i += 2; continue; } if (c === quote) quote = null; i++; continue; }
+        if (c === '/' && n === '*') { inComment = true; i += 2; continue; }
+        if (c === '"' || c === "'") { quote = c; i++; continue; }
+        if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth < minDepth) minDepth = depth; }
+        i++;
+    }
+    ok('★★ 花括号配平且没有多余的 }（收尾深度 ' + depth + '，最低 ' + minDepth + '）',
+        depth === 0 && minDepth === 0);
+
+    /* ★★ 关键规则必须**没被注释吞掉**：拿几条"一定存在"的规则出来，
+       数一下它们在 cssNC（已剥注释）里还在不在。 */
+    const spot = ['.media-panel-title', '.media-panel-veil', '.media-panel-bg',
+        '.crosshair-h', '.draft-frame', '#guide-layer'];
+    const lost = spot.filter((s) => !cssNC.includes(s + ' {') && !cssNC.includes(s + ','));
+    ok('★★ 关键规则都没被注释/坏括号吞掉（抽查 ' + spot.length + ' 条）',
+        !lost.length, lost.join(', '));
+
+    /* ★★★ 注释标记丢了也看不出来：配平检查只数数量，两端一起丢就照样"配平"。
+       所以再加一条不变量：剥掉注释之后，**不该还留着一堆 ★** ——
+       这个文件里 ★ 只出现在注释里，它要是活在 cssNC 里，
+       就说明某段注释的两端标记丢了、正文变成了野声明。
+       （P60 就撞上过一次：`.media-panel-title` 那条规则的注释标记不见了。） */
+    ok('★★★ 注释标记没丢（剥掉注释后 cssNC 里不该还有 ★）',
+        !/★/.test(cssNC), '★ 出现 ' + (cssNC.match(/★/g) || []).length + ' 次');
+
+    /* ============================================================
+       ★★★ 特异度陷阱：`.section h3`(0,1,1) 会压死 `.media-panel-title`(0,1,0)
+       ------------------------------------------------------------
+       P60 的真实 bug：面板标题的字号怎么改都没反应，
+       因为 `.section h3` 比它**更特异** —— 特异度高的赢，跟文件顺序无关。
+       把容器从 `h3` 换成 `div` 就好了，正是这个原因。
+       下面这条守卫扫出**所有**"容器 + 裸元素"形式的选择器
+       （例如 `.section h3`、`#media p`）：它们的特异度都 ≥ (0,1,1)，
+       足以压过面板自己的单类规则，所以必须显式排除面板的类。
+       ★ 只盯**面板里真的用到的标签**（从 index.html 现读，改标签时会自动跟上），
+         不然 `.section h2` 这种八竿子打不着的也会被算进来。
+       ============================================================ */
+    const panelTags = [...new Set(
+        [...html.matchAll(/<([a-z0-9]+)[^>]*class="media-panel[^"]*"/g)].map((m) => m[1].toLowerCase())
+    )];
+    const risky = [];
+    (cssNC.match(/(^|\n)([^{}]+)\{/g) || []).forEach((r) => {
+        const sel = r.replace(/[{\n]/g, ' ').trim();
+        sel.split(',').forEach((one) => {
+            const s = one.trim();
+            /* 只看"提到 .section 或 #media，且最后一段是面板用到的裸元素"的选择器 */
+            if (!/(\.section|#media)/.test(s)) return;
+            if (!new RegExp('\\s(' + panelTags.join('|') + ')$').test(s)) return;
+            if (/:not\(/.test(s)) return;                  /* 已经显式排除 */
+            risky.push(s);
+        });
+    });
+    ok('★★★ 没有"容器+裸元素"的规则会压面板文字（面板里用到 ' + panelTags.join('/') +
+        '；这类选择器必须 :not(…) 排除过）', !risky.length, risky.join(' | '));
+})();
 
 (function braces() {
     let depth = 0, line = 1; const bad = [];
@@ -307,8 +414,27 @@ const cssNC = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
     const secBlock = (cssNC.match(/\.section,\s*\.hero\s*\{[^}]*\}/) || [''])[0];
     ok('高度三件套都写死 100dvh（谁也别想把它顶高）',
         /height:\s*100dvh/.test(secBlock) && /min-height:\s*100dvh/.test(secBlock) && /max-height:\s*100dvh/.test(secBlock));
+    /* ★ P61：宽度仍然"随内容长"，但**一屏宽的最低线只留给 #home**。
+       原来 `.section, .hero` 共用一条 `min-width: calc(100vw - nav)` ——
+       等于每节至少占满一屏；现在分区改成最小 1000px（往上随内容），
+       `#home` 照旧一屏宽。 */
     ok('宽度随内容长（max-content + 一屏的 min-width）',
         /width:\s*max-content/.test(secBlock) && /min-width:\s*calc\(100vw\s*-\s*var\(--nav-width\)\)/.test(secBlock));
+    ok('★★ 分区的最小宽度改成固定 1000px（`#home` 排除在外）',
+        /\.section:not\(#home\)\s*\{[^}]*min-width:\s*1000px/.test(cssNC));
+    /* ★★ 首页必须**不受影响**：它是 `<section id="home" class="hero">` ——
+       没有 `.section` 这个类，所以那条 `:not(#home)` 本来就够不着它；
+       这里连"它到底带不带 .section"一起钉住，免得以后有人加类时把它算进去。 */
+    ok('★★ 首页是 #home.hero（不带 .section），那条最小宽度够不着它',
+        /id="home"[^>]*class="[^"]*hero/.test(html) &&
+        !/id="home"[^>]*class="[^"]*\bsection\b/.test(html));
+    /* ★★ 手机端必须把这条 1000px 复位 —— 而且**要带上同一个选择器**：
+       `.section:not(#home)` (0,2,0) 比 `.section` (0,1,0) 更特异，
+       只写 `.section { min-width: 0 }` 是压不过它的（P60 刚学的教训）。 */
+    ok('★★ 手机端用同特异度的选择器把 1000px 复位掉（否则 390px 屏里出现 1000px 宽的分区）',
+        /* ★ 跨注释的窗口要给足：cssNC 把注释换成**等长空格串**（P52 的教训），
+           这里中间压着一段 P61 说明，200 个字符根本不够。 */
+        /\.section,\s*\n\s*\.section:not\(#home\),\s*\n\s*\.hero\s*\{[\s\S]{0,1500}?min-width:\s*0/.test(cssNC));
     ok('不收缩也不放大（flex: 0 0 auto；写了 shrink 就会把节压窄）',
         /flex:\s*0\s+0\s+auto/.test(secBlock));
     /* ★ 文件里有 8 个 (max-width:768px) 查询（浮窗、前景粒子各有自己的），
@@ -317,6 +443,1218 @@ const cssNC = css.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length));
     const mobBlock = _mob.map(m => cssNC.slice(m.index, m.index + 2000)).find(s => /\.section,/.test(s)) || '';
     ok('移动端把「一屏一格」复位（否则内容被裁且滚不到）',
         /min-width:\s*0;/.test(mobBlock) && /max-height:\s*none;/.test(mobBlock) && /height:\s*auto;/.test(mobBlock));
+})();
+
+/* ============================================================
+   [2m] 面板文字挂在布局规格上（P56）
+   ------------------------------------------------------------
+   原来的毛病：`.media-panel-main` 靠 `justify-content: space-between`
+   被钉在**面板底部**，而面板高度随视口/分区走 —— 一缩放窗口文字就上下跑。
+   现在它绝对定位、上边贴 `--v-inset` 的下端，左右各 5vw，和面板自己的
+   padding 同一个值（所以和编号左对齐）。
+   ============================================================ */
+section('[2m] 面板文字挂在布局规格上（P56）');
+(function panelTextSpec() {
+    const mainBlk = (cssNC.match(/\.media-panel-main\s*\{[\s\S]*?\n\}/) || [''])[0];
+
+    /* ★★ 位置必须来自布局令牌 + 绝对定位，不能来自"流式排列贴面板底部"。
+       ★★ 但**别去规定那个值长什么样**：P56 我写过 `top: var(--v-inset)`、
+       P57 你改成 `bottom: var(--v-inset)`、P58 又变成
+       `bottom: calc(var(--v-inset) - 10px)` —— 每次都把那两条断言顶红。
+       所以现在只断言："用了令牌（或 0）"，算式随便写。 */
+    ok('★★ 文字块绝对定位，位置由布局令牌给出（不再是流式贴底）',
+        /position:\s*absolute/.test(mainBlk) &&
+        /(top|bottom):[^;]*(var\(--(v-inset|panel-pad)|^\s*0)/.test(mainBlk));
+    /* ★★ 左右都要有内缩，而且**两边表达式一致**（对称）。
+       同样不规定单位/算式：`2vw`、`5vw`、`min(10vh, 25px)` 都行 ——
+       只要求左右是同一个东西，不然文字块就偏了。 */
+    ok('★★ 文字块左右内缩对称（两边表达式必须一模一样）',
+        (function () {
+            const l = /left:\s*([^;]+);/.exec(mainBlk);
+            const r = /right:\s*([^;]+);/.exec(mainBlk);
+            return !!l && !!r && l[1].trim() === r[1].trim() && l[1].trim() !== 'auto';
+        })());
+    /* ★★ 面板的左右 padding 也必须是 5vw：编号在流里、吃的是这个 padding，
+       两边不一致的话"01"和标题的左边缘会明显错开。 */
+    ok('★★ 面板左右内边距同为 5vw（编号与标题左对齐靠这一条）',
+        /\.media-panel\s*\{[^}]*padding:\s*var\(--panel-pad\) 5vw/.test(cssNC));
+    /* ★★★ 回归守卫：不许再用 space-between 把正文钉到底部 —— 那正是"文字会跑"。 */
+    ok('★★★ 面板不再用 space-between（正文钉底部 = 缩放窗口时文字会跑）',
+        !/\.media-panel\s*\{[^}]*justify-content:\s*space-between/.test(cssNC));
+    /* ★ 两个**不同字号**的文字要有共同基线，才算"一同对齐"。 */
+    ok('★ 标题与说明基线对齐（两个字号不同，用 baseline 才对得齐）',
+        /align-items:\s*baseline/.test(mainBlk));
+    /* ★ 说明顶到右侧：单行时它的右边缘正好落在 5vw 那条线上。 */
+    ok('★ 说明靠 margin-left: auto 顶到右侧',
+        /\.media-panel-desc\s*\{[^}]*margin-left:\s*auto/.test(cssNC));
+    /* ★ 窄窗口时先让说明换行，别把标题挤变形 */
+    ok('★ 窄窗口先让说明换行（标题 flex: 0 0 auto + 说明 min-width: 0）',
+        /\.media-panel-title\s*\{[^}]*flex:\s*0 0 auto/.test(cssNC) &&
+        /\.media-panel-desc\s*\{[^}]*min-width:\s*0/.test(cssNC));
+    /* ★ 标题原来有 `margin: 0 0 0.55em`（给下面那行留白），同一行里不需要了 */
+    ok('★ 标题不再留下方留白（同一行了）',
+        /\.media-panel-title\s*\{\s*\n\s*flex:\s*0\s0\sauto;\s*\n\s*margin:\s*0;/.test(cssNC));
+
+    /* ============================================================
+       P58：面板宽度写死 + 标题字号跟宽度走
+       ============================================================ */
+    /* ★★ 面板宽度的**不变式**只有两条：
+         ① 宽度走 `--panel-w` 这个令牌；
+         ② 面板 `flex: 0 0 var(--panel-w)` —— 不收缩也不放大。
+       ★ 令牌的**值**是会手调的：P58 我钉过"必须是 px"（当时是 700px），
+         P59 你换成了 `clamp(240px, 20vw, 400px)` → 断言假红。
+         同一个毛病这个文件里已经犯过好几次了，这次只钉上面两条。 */
+    ok('★★ 面板宽度走 --panel-w 令牌，且面板不参与伸缩（flex: 0 0）',
+        /--panel-w:\s*[^;]+;/.test(cssNC) &&
+        /\.media-panel\s*\{[^}]*flex:\s*0 0 var\(--panel-w\)/.test(cssNC));
+    /* ★★ 区间 + 首选值都要在，而且下限/上限是 px、首选是 vw（"跟宽度走"）。
+       断言的是**结构**（谁跟谁走），具体数字只打印出来 —— P34 的教训：
+       钉死可调的数，代价是每次调参都要回来改自检。 */
+    const fsTitle = /\.media-panel-title\s*\{[^}]*font-size:\s*clamp\(([\d.]+)px,\s*([\d.]+)vw,\s*([\d.]+)px\)/.exec(cssNC);
+    ok('★★ 标题字号 = clamp(px 下限, vw 首选, px 上限)（跟视口**宽度**走）', !!fsTitle);
+    if (fsTitle) {
+        const lo = +fsTitle[1], mid = +fsTitle[2], hi = +fsTitle[3];
+        ok('★ 字号区间自洽：下限 ' + lo + 'px < 上限 ' + hi + 'px，首选 ' + mid +
+            'vw（' + (lo / (mid / 100)).toFixed(0) + 'px 宽时到下限、' +
+            (hi / (mid / 100)).toFixed(0) + 'px 宽时到上限）',
+            lo > 0 && hi > lo && mid > 0);
+    }
+
+    /* ============================================================
+       P57："文字在安全区范围内" —— 靠的是**别重复扣 insets**
+       ------------------------------------------------------------
+       分区 padding = `--v-inset … --safe-b`，面板正好铺在这个内容盒里，
+       所以**面板自己的上下边就是安全区那两条线**：
+         面板顶边 = 视口顶往下 --v-inset；面板底边 = 视口底往上 --safe-b。
+       在面板**里面**再写一次这些页面级令牌，就是把同一条线量两遍。
+       ============================================================ */
+    ok('★★ 面板内不再重复使用页面级安全区令牌（--safe-b / --content-x）',
+        !/--safe-b/.test(mainBlk) && !/--content-x/.test(mainBlk));
+    /* ★★ 必须有一个"兜住"的上界：块往上长，最多长到面板顶边（= 安全区上沿），
+       再长就被面板的 overflow: hidden 切掉了。 */
+    ok('★★ 文字块有上界（max-height 或 top），长不到面板顶边以外',
+        /max-height:\s*calc\(100% - /.test(mainBlk) || /top:\s*(0|var\(--panel-pad)/.test(mainBlk));
+    /* ★ 块必须锚在面板内：要么 top 要么 bottom 有一个（两个都写就等于定了高度，
+       文字只剩"块内对齐"这一条路）。 */
+    ok('★ 文字块锚在面板内（top 或 bottom 有一个）',
+        /\btop:/.test(mainBlk) || /\bbottom:/.test(mainBlk));
+})();
+
+/* ============================================================
+   [2n] 拼接方块拆成独立的"装饰"容器（P62）
+   ------------------------------------------------------------
+   原来方块是注入到 #skills / #projects / #contact 里的 ——
+   装饰和内容焊在一起，想挪装饰就得动内容。
+   现在拆成三个 `.deco[data-deco=…]`，方块注入到它们身上。
+   ★ 这一节钉的是"拆干净了"：内容分区不再被注入、颜色不再由 JS 写 inline。
+   ============================================================ */
+section('[2n] 拼接方块拆成独立装饰容器（P62）');
+(function decoMosaic() {
+    const jsMosaic = codeOnly(read('js/mosaic.js'));
+
+    /* ★★ 装饰不再挂在内容分区上（这条是本次重构的核心不变式） */
+    ok('★★ 方块不再注入内容分区（CONFIG 里不许再出现 #skills / #projects / #contact）',
+        !/selector:\s*'#(skills|projects|contact)'/.test(jsMosaic) &&
+        /selector:\s*'\.deco\[data-deco="skills"\]'/.test(jsMosaic) &&
+        /selector:\s*'\.deco\[data-deco="projects"\]'/.test(jsMosaic) &&
+        /selector:\s*'\.deco\[data-deco="contact"\]'/.test(jsMosaic));
+
+    /* ★★ 颜色必须由 CSS 决定 —— JS 一旦传 color / tileColor，就会写成
+       inline style 挂在 layer 上，把容器的 CSS 变量盖掉，颜色就只能在 JS 里改。 */
+    ok('★★ 颜色不由 JS 传（opts 里没有 color / tileColor，CSS 才管得住）',
+        !/color:\s*'/.test(jsMosaic) && !/tileColor:/.test(jsMosaic) &&
+        /* 工厂本身仍然支持这两个选项（以后想按实例覆盖还能用） */
+        /cfg\.color/.test(jsMosaic) && /cfg\.tileColor/.test(jsMosaic));
+
+    /* ★ 三个容器真的在 index.html 里，而且在 main 里面 */
+    const nDeco = (html.match(/<section class="deco" data-deco="/g) || []).length;
+    ok('★ 三个装饰容器都在 index.html（' + nDeco + ' 个）', nDeco === 3);
+    /* ★ P63：这条原来钉的是"排在 main 末尾"（P62 的临时位置）。
+       你已经把它们挪到各自那一节旁边了 —— 位置本来就是你要自己排的，
+       自检不该钉住它。现在只钉"三个都在 main 里面"这条结构不变式。 */
+    const iDeco = html.indexOf('data-deco="skills"');
+    ok('★ 三个装饰容器都在 <main> 里面（位置随你排，自检不钉顺序）',
+        iDeco > html.indexOf('<main>') && iDeco < html.lastIndexOf('</main>') &&
+        html.indexOf('data-deco="projects"') < html.lastIndexOf('</main>') &&
+        html.indexOf('data-deco="contact"') < html.lastIndexOf('</main>'));
+
+    /* ★★ 四样可调的东西都在 .deco 那条规则里：
+       宽度（默认 1000px）、底色、实色带色、方块色。 */
+    const decoBlk = (cssNC.match(/\.deco\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('★★ .deco 四样可调：宽度（默认 1000px）/ 底色 / --mosaic-color / --mosaic-tile-color',
+        /--deco-w:\s*1000px/.test(decoBlk) &&
+        /width:\s*var\(--deco-w\)/.test(decoBlk) &&
+        /--mosaic-color:/ .test(decoBlk) &&
+        /--mosaic-tile-color:/.test(decoBlk));
+    /* ★ P63：底色从 .deco 基类挪到了**实例规则**里（skills 故意不写 —— 它要露
+       body 色；projects / contact 各自写 background: var(--bg-alt)）。
+       所以这里改成钉"想显底色的那两实例确实声明了"，基类不再要求。 */
+    const decoInst = (dataDeco) =>
+        (new RegExp('\\.deco\\[data-deco="' + dataDeco + '"\\]\\s*\\{[^}]*\\}').exec(cssNC) || [''])[0];
+    ok('★ 实例各自声明底色（projects / contact 有 background: var(…)，skills 故意没有 → 露 body 色）',
+        /background:\s*var\(/.test(decoInst('projects')) &&
+        /background:\s*var\(/.test(decoInst('contact')) &&
+        !/background:/.test(decoInst('skills')));
+    /* ★ 必须是定位祖先（.mosaic-layer 是 absolute + inset:0），而且不吃鼠标 */
+    ok('★ .deco 是定位祖先 + 不吃鼠标（装饰层不该拦住准星的命中测试）',
+        /position:\s*relative/.test(decoBlk) && /pointer-events:\s*none/.test(decoBlk));
+    /* ★★ 手机端宽度要跟着屏幕走：1000px 的装饰块在 390px 的屏里必然横向溢出 */
+    ok('★★ 手机端 --deco-w 改成 100%（1000px 装饰块在手机上是横向溢出）',
+        /@media \(max-width: 768px\)[\s\S]{0,400}?\.deco\s*\{[^}]*--deco-w:\s*100%/.test(cssNC));
+})();
+
+/* ============================================================
+   2o. 侧边栏：推开式游乐区（P63）
+   ------------------------------------------------------------
+   这一节钉的是一条**等式**和一条**禁令**：
+     · `--sidebar-w = 100vw - --nav-width` —— "展开后屏幕上只剩导航栏
+       与页脚贴在右侧边缘"就是这一条算出来的，改了它就改了全部几何；
+     · 推开必须用 left / margin-left，**不许**出现 transform ——
+       .page-zoom 上那份开屏 transform 会因此变成所有 position: fixed
+       子元素的包含块，整套 HUD（尺子 / 参考线 / 准星）静默错位。
+   其余（时长、层级、舞台长什么样）都只钉不变式，不钉具体数值。
+   ============================================================ */
+section('[2o] 侧边栏：推开式游乐区（P63）');
+(function playSidebar() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+
+    /* --- 结构：和浮窗同一层（body 直接子元素） --- */
+    ok('★ <aside id="play-sidebar"> 在，且是 body 直接子元素那一层（避开 .page-zoom 的 transform）',
+        /<aside[^>]*id="play-sidebar"/.test(html) &&
+        html.indexOf('id="play-sidebar"') > html.indexOf('</dialog>') &&
+        html.indexOf('id="play-sidebar"') > html.lastIndexOf('</main>') &&
+        html.indexOf('id="play-sidebar"') < html.indexOf('</body>'));
+    ok('★ 开关在首页 hero 里（data-play="open" + aria-controls 指向侧边栏）',
+        /<button[^>]*data-play="open"[^>]*aria-controls="play-sidebar"/.test(html));
+    ok('★ 脚本排在 <aside> 之后（就地查元素，排前面会静静地不启用）',
+        html.indexOf('src="js/sidebar.js"') > html.indexOf('id="play-sidebar"'));
+
+    /* --- 几何：一条等式决定"导航栏与页脚贴右缘" --- */
+    ok('★★ --sidebar-w = calc(100vw - var(--nav-width))（右侧那一条的宽度就来自这条）',
+        /--sidebar-w:\s*calc\(100vw - var\(--nav-width\)\)/.test(cssNC));
+    ok('★★ 导航栏与页脚用**同一个 left** 左移（所以页脚永远在导航栏正下方）',
+        /body\.sidebar-open \.navbar,\s*body\.sidebar-open \.footer\s*\{[^}]*left:\s*var\(--sidebar-w\)/.test(cssNC));
+    ok('★★ main 的 margin-left 推到 100vw（是整个推出视野，不是变窄）',
+        /body\.sidebar-open main\s*\{[^}]*margin-left:\s*100vw/.test(cssNC));
+    ok('★★ 推开只关在桌面（手机上导航栏是顶部 sticky 横条，推出去就回不来了）',
+        /@media \(min-width: 769px\)\s*\{[\s\S]{0,1500}?body\.sidebar-open main\s*\{[\s\S]{0,200}?margin-left:\s*100vw/.test(cssNC));
+
+    /* --- ★★ 禁令只针对"推开整站"那几条：它们必须走布局属性 ---
+       （侧边栏**自己**那一条用 transform 平移，是另一回事：
+        它身上没有 position: fixed 的后代，也不承担 HUD 的定位锚点 ——
+        理由与配套写在 [2q]） */
+    const pushRules = [...cssNC.matchAll(/body\.sidebar-open (?:\.navbar|\.footer|main|\.hero-underline)[^{}]*\{[^}]*\}/g)].map((m) => m[0]);
+    const pushTf = pushRules.filter((r) => /transform|translate/.test(r));
+    ok('★★ 推开整站走的是 left / margin-left，一条 transform 都没有（' + pushRules.length + ' 条）',
+        pushRules.length >= 3 && !pushTf.length,
+        pushTf.length ? '这几条里有 transform：' + pushTf.join(' | ') : '');
+
+    /* --- 层级：P65 起它铺在 0 层（你指定的）---
+       配套是"刻度尺必须离屏"，那条因果钉在 [2q]；这一节只管"它确实是 0"。 */
+    const sideBlk = (cssNC.match(/\.play-sidebar\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const myZ = +((/(?:^|\s)z-index:\s*(\d+)/.exec(sideBlk) || [])[1] || 0);
+    ok('★★ 侧边栏在 0 层（不再压过全站：它是一块铺在最底下的场地）', myZ === 0);
+
+    /* --- 打开期间：光标交还系统 + 藏准星（和 body.window-open 同一套做法） --- */
+    ok('★ 打开期间把系统光标还回来（全站 cursor: none，游乐区里得能指东西）',
+        /body\.sidebar-open,\s*body\.sidebar-open \*\s*\{[^}]*cursor:\s*auto\s*!important/.test(cssNC));
+    ok('★ 打开期间藏掉自定义准星与圆点',
+        /body\.sidebar-open \.crosshair-h[\s\S]{0,240}?\.cursor-dot\s*\{[^}]*opacity:\s*0\s*!important/.test(cssNC));
+
+    /* --- JS：只挂类、时长归 CSS --- */
+    ok('★ 有 ENABLED 总开关（和 draft-layer / home-underline / 浮窗一个套路）',
+        /const ENABLED = true;/.test(jsSide));
+    ok('★ 开关只干一件事：给 body 挂 / 摘 .sidebar-open',
+        /classList\.add\('sidebar-open'\)/.test(jsSide) && /classList\.remove\('sidebar-open'\)/.test(jsSide));
+    ok('★ 打开期间暂停 World、关闭时恢复（里面要跑游戏，背景不用白烧 rAF）',
+        /World\.pause\(\)/.test(jsSide) && /World\.resume\(\)/.test(jsSide));
+    ok('★ Esc 能关', /'Escape'/.test(jsSide));
+    ok('★ 焦点归还带 preventScroll（否则会顺手挪掉 main 的横向滚动位置）',
+        /focus\(\{\s*preventScroll:\s*true\s*\}\)/.test(jsSide));
+    ok('★ 侧边栏自己的动效时长 / 曲线全在 CSS（JS 里不为面板和悬停回执掐表）',
+        !/\d+\s*ms/.test(jsSide) &&
+        /* ★ P86：JS 里现在**有**一个表 —— 那是"游戏发来的回执"的计时器，
+           时长是游戏运行时给的，写不进 CSS。这条管的是面板与悬停回执那一套。 */
+        !/setTimeout\((hideGameToast|showGameToast|placeToast)/.test(jsSide));
+})();
+
+/* ============================================================
+   2p. 游乐区：卡带栏 + 导航栏同款玻璃（P64）
+   ------------------------------------------------------------
+   这一节钉的是两件"必须一模一样"的事 —— 它们靠肉眼比对最容易漏：
+     · 侧边栏的**玻璃**（底色 + 两层 backdrop-filter）和 .navbar 逐条相同；
+     · **卡带栏与导航栏同宽、同内边距** —— 宽度决定"镜像"，
+       内边距决定第一张卡带的顶端和 logo 落在同一条水平线上。
+   所以这里不钉具体数值，而是把两条规则一起抽出来**逐条对比**：
+   以后调导航栏的玻璃或内边距，只改一边就会红。
+   ============================================================ */
+section('[2p] 游乐区：卡带栏 + 同款玻璃（P64）');
+(function playRail() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+
+    /* 抽一条规则的声明块（取文件里**第一处**匹配，正好是基类那条） */
+    const firstRule = (sel) => (new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}')
+        .exec(cssNC) || [])[1] || '';
+    const decl = (blk, prop) =>
+        ((new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)').exec(blk) || [])[1] || '').trim();
+
+    const navBlk = firstRule('.navbar');
+    const sideBlk = firstRule('.play-sidebar');
+    const railBlk = firstRule('.play-rail');
+    const mainBlk = firstRule('.play-main');
+    const nameBlk = firstRule('.play-cart-name');
+
+    /* --- ★★ 底色 / 透明度逐字一致 —— P72 起**下放到两列** ---
+       P64 时这条比的是 .play-sidebar。P72 查出一件事：box-shadow 画在元素
+       **自己的背景后面** —— 卡带栏没有背景，它内侧那半圈光晕就不会被压暗，
+       于是和导航栏差一档（≈#E13232 vs ≈#681919）。所以底色挪到
+       .play-rail / .play-main 各铺一次，侧边栏自己不再画
+       （半透明叠两层会 ≈0.80 黑，比导航栏明显更暗）。 */
+    const bgNorm = (s) => String(s).replace(/\s+/g, ' ').trim();
+    const GLASS = ['background', 'backdrop-filter', '-webkit-backdrop-filter'];
+    const navGlass = GLASS.map((p) => decl(navBlk, p));
+    const navBg = navGlass[0];
+    ok('★★ 卡带栏 / 舞台的底色与导航栏逐字相同（' + bgNorm(navBg) + '）',
+        !!navBg && bgNorm(decl(railBlk, 'background')) === bgNorm(navBg) &&
+        bgNorm(decl(mainBlk, 'background')) === bgNorm(navBg),
+        '卡带栏：' + decl(railBlk, 'background') + ' | 舞台：' + decl(mainBlk, 'background'));
+    ok('★★ 侧边栏自己**不画**底色（画了就叠成两层、比导航栏暗一档）',
+        !/background\s*:/.test(sideBlk));
+
+    /* --- 模糊：两边都写就必须一样 ---
+       ★ P66 起侧边栏**故意不写**这一层：它是全屏的、而且靠 left 滑进来，
+         每帧重采一次 100vw 的 backdrop 太贵（导航栏只有 75px，那层留着）。
+         这不是漂移，是取舍 —— 但一旦它写了，就必须和导航栏对得上。 */
+    const blurPairs = [1, 2].map((i) => [navGlass[i], decl(sideBlk, GLASS[i])]);
+    ok('★ 模糊两边都写时必须一致（侧边栏允许省掉这层：全屏 backdrop-filter 太贵）',
+        blurPairs.every((pair) => !pair[1] || pair[0] === pair[1]),
+        blurPairs.map((pair) => pair[0] + '  vs  ' + pair[1]).join(' | '));
+
+    /* --- ★★ P70：卡带栏的边框 / 光晕是导航栏的镜像 ---
+       0 0 的两层外阴影往两侧都散：导航栏在屏幕最右（往左落在游乐区右缘），
+       卡带栏在游乐区最左（往右落在舞台上）。数值必须逐字一致，
+       所以这里归一化空白后整串比对（改一边没改另一边会红）。 */
+    const norm = (s) => s.replace(/\s+/g, ' ').trim();
+    ok('★★ 卡带栏挂着和导航栏**逐字相同**的两层外阴影（' + norm(decl(navBlk, 'box-shadow')) + '）',
+        !!decl(navBlk, 'box-shadow') &&
+        norm(decl(navBlk, 'box-shadow')) === norm(decl(railBlk, 'box-shadow')),
+        '卡带栏：' + norm(decl(railBlk, 'box-shadow')));
+    ok('★★ 呼吸光带也是镜像的：导航栏在右缘（::after right: 0）、卡带栏在左缘（::after left: 0）',
+        /\.navbar::after\s*\{[^}]*right:\s*0/.test(cssNC) &&
+        /\.play-rail::after\s*\{[^}]*left:\s*0/.test(cssNC) &&
+        /@keyframes play-railGlow/.test(cssNC));
+    ok('★ 卡带栏是定位元素（那条 ::after 才不会跑到 .play-sidebar 上去定位）',
+        /position:\s*relative/.test(railBlk));
+
+    /* --- ★★ P72：两条接缝的三种配料必须逐字相同 ---
+       接缝 = 底色 + 1px 边框 + 两层阴影。底色和阴影上面已经逐字比过了，
+       这里把边框补齐：导航栏右缘那条 = 卡带栏左右两条 = `1px solid var(--border)`。
+       三种配料相同 → 两侧的像素只可能同一个算法算出来
+       （框外亮 = 光晕落在邻居背景之上；框内暗 = 被自己那层 0.55 压暗）。 */
+    ok('★★ 接缝的边框也一致（导航栏右缘那条 = 卡带栏两条 = 1px solid var(--border)）',
+        !!decl(navBlk, 'border-right') &&
+        decl(railBlk, 'border-right') === decl(navBlk, 'border-right') &&
+        decl(railBlk, 'border-left') === decl(navBlk, 'border-right'));
+
+    /* --- ★★ P71：两条接缝都要有"硬 1px 亮线 + 光晕" ---
+       box-shadow 画在元素边框后面，所以：
+         · 卡带栏右侧靠它自己的 border-right 得到那条硬线；
+         · 导航栏左缘本来没有边框，而游乐区那条 border-right 会被光晕盖掉 ——
+           于是展开时要给导航栏补一条 border-left，两侧才对称。 */
+    ok('★★ 展开时导航栏左缘补了 1px 亮线（接缝才和卡带栏右侧一样有硬边）',
+        /body\.sidebar-open \.navbar\s*\{[^}]*border-left:\s*1px solid var\(--border\)/.test(cssNC));
+    ok('★ 这条只加在展开态、不进基类（关着的时候它左缘就是屏幕左缘，不需要）',
+        !/^\.navbar\s*\{[\s\S]{0,400}?border-left:/m.test(cssNC));
+
+    /* --- ★★ 同宽 + 同内边距（镜像 + 同一条顶部对齐线） --- */
+    ok('★★ 卡带栏与导航栏同宽（width 引的是同一个变量：' + decl(navBlk, 'width') + '）',
+        !!decl(navBlk, 'width') && decl(railBlk, 'width') === decl(navBlk, 'width') &&
+        /flex:\s*0 0 var\(--nav-width\)/.test(railBlk));
+    ok('★★ 卡带栏的内边距和导航栏一模一样（第一张卡带的顶端因此和 logo 同一条线）',
+        !!decl(navBlk, 'padding') && decl(railBlk, 'padding') === decl(navBlk, 'padding'));
+    ok('★ 舞台那一列也用同一条顶部对齐线（--v-inset + --nudge-logo）',
+        /padding:\s*calc\(var\(--v-inset\) \+ var\(--nudge-logo\)\)/.test(mainBlk));
+
+    /* --- 两列结构 --- */
+    ok('★ 侧边栏是横向两列（左卡带栏 / 右舞台），HTML 里也是这个顺序',
+        /flex-direction:\s*row/.test(sideBlk) &&
+        html.indexOf('class="play-rail"') > html.indexOf('id="play-sidebar"') &&
+        html.indexOf('class="play-rail"') < html.indexOf('class="play-main"'));
+
+    /* --- ★★ 卡带是数据生成的，不写死在 HTML 里 --- */
+    ok('★★ 卡带不写死在 HTML（.play-carts 是空 ul，由 JS 按 works.js 生成）',
+        /<ul class="play-carts" data-play="carts"><\/ul>/.test(html));
+    ok('★★ 只认 data/works.js 里 kind === "unity" 的条目（唯一数据源）',
+        /window\.WORKS \|\| \[\]/.test(jsSide) && /kind === 'unity'/.test(jsSide) &&
+        /cartsEl\.appendChild\(makeCart\(w\)\)/.test(jsSide));
+
+    /* --- 竖排的名字 --- */
+    ok('★ 卡带名字竖排（75px 里横排 "Boom Shooting" 必溢出；站里 .df-v 已有先例）',
+        /writing-mode:\s*vertical-rl/.test(nameBlk) && /white-space:\s*nowrap/.test(nameBlk));
+
+    /* --- 选中态走 aria，不另起类 --- */
+    ok('★ 选中态用 [aria-pressed="true"]（JS 写 aria、CSS 认 aria，不另起"选中"类名）',
+        /\.play-cart\[aria-pressed="true"\]/.test(cssNC) &&
+        /setAttribute\('aria-pressed'/.test(jsSide) &&
+        /* ★ P86：原来这条把整个文件里的 `is-on` 也一并禁了；现在 `.play-msg.is-on`
+           是**可见性**状态（回执淡入），不是选中态 —— 规则收回到它本来管的"选中态"。 */
+        !/is-active|is-selected/.test(codeOnly(read('js/sidebar.js'))));
+
+    /* --- 舞台的规格来自 works.js，一个字都不用另写 --- */
+    ok('★ 舞台三行规格（编号 / 名字 / 引擎与体积）都在 HTML 里，由 JS 从 works.js 填',
+        /data-play="spec-no"/.test(html) && /data-play="spec-name"/.test(html) &&
+        /data-play="spec-meta"/.test(html) &&
+        /w\.title/.test(jsSide) && /w\.tags/.test(jsSide) && /w\.weight/.test(jsSide));
+
+    /* --- 旧的占位类不该再留着 --- */
+    ok('★ 旧的 .play-empty 已经不存在（换成了 .play-spec）',
+        !/\.play-empty/.test(cssNC) && !/play-empty/.test(html));
+})();
+
+/* ============================================================
+   2q. 拉出来 / 仪器退场 / 刻度时钟反向（P65）
+   ------------------------------------------------------------
+   这一节钉三件"必须成对"的事：
+     · 侧边栏从屏幕左外滑进来，且和"整站右移"共用同一个时长+曲线 ——
+       那一整块才是刚性的（看起来就是导航栏把它拖出来）；
+     · 游乐区铺在 0 层 ⇒ 两块刻度尺**必须**离屏；而准星挂件
+       （三角 / 条带 / 读数）**只能动 opacity**，写 transform 会被
+       js/rulers.js 每帧写的 transform 盖掉；
+     · 刻度时钟是 WAAPI 动画 ⇒ "反向播放"必须在 circle-parallax.js 里
+       加一份 direction: 'reverse'，而且 fill 必须是 both。
+   ============================================================ */
+section('[2q] 拉出来 / 仪器退场 / 刻度时钟反向（P65）');
+(function sidebarMotion() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const jsCircle = codeOnly(read('js/circle-parallax.js'));
+    const sideBlk = (cssNC.match(/\.play-sidebar\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const openBlk = (cssNC.match(/body\.sidebar-open \.play-sidebar\s*\{[^}]*\}/) || [''])[0];
+
+    /* --- 1. 从屏幕左外滑进来（不是淡入） --- */
+    ok('★★ 关着时整条躲在屏幕左外：left = -1 × --sidebar-w',
+        /left:\s*calc\(-1 \* var\(--sidebar-w\)\)/.test(sideBlk));
+    ok('★★ 展开时滑到 left: 0，而且不再靠 opacity 淡入',
+        /left:\s*0/.test(openBlk) && !/opacity/.test(openBlk));
+    ok('★★ 用的是 left 而不是 transform —— 这样才和导航栏的 left 同一帧（transform 可能被合成器提前跑）',
+        /transition:[\s\S]{0,120}?left var\(--sidebar-dur\)/.test(sideBlk) &&
+        !/transform/.test(sideBlk) && !/transform/.test(openBlk));
+
+    /* --- 2. 与"整站右移"同一套时长 / 曲线 + 同一个属性 --- */
+    ok('★★ 侧边栏滑入与整站右移共用 --sidebar-dur + --panel-ease（逐帧同进度 = 像被导航栏拉出来）',
+        /left var\(--sidebar-dur\) var\(--panel-ease\)/.test(sideBlk) &&
+        /left var\(--sidebar-dur\) var\(--panel-ease\)/.test(cssNC) &&
+        /margin-left var\(--sidebar-dur\) var\(--panel-ease\)/.test(cssNC));
+
+    /* --- 3. 0 层 ⇒ 刻度尺必须离屏 --- */
+    ok('★★ 左尺向左、底尺向下离屏（否则它们会横在 0 层的游乐区上）',
+        /body\.sidebar-open #ruler-left\s*\{[^}]*translateX\(-(?:100%|100vw)\)/.test(cssNC) &&
+        /body\.sidebar-open #ruler-bottom\s*\{[^}]*translateY\((?:100%|100vh)\)/.test(cssNC));
+    ok('★ 两块 canvas 有 transform 过渡：缩回时按原路滑回来（transition 天然反向）',
+        /#ruler-left,\s*#ruler-bottom\s*\{[^}]*transition:\s*transform var\(--sidebar-dur\)/.test(cssNC));
+
+    /* --- 4. ★★ 准星挂件只能动 opacity --- */
+    const gadgets = [...cssNC.matchAll(/body\.sidebar-open \.(?:ruler-marker-[xy]|ruler-band|ruler-read)[^{}]*\{[^}]*\}/g)].map((m) => m[0]);
+    ok('★★ 三角 / 条带 / 读数只动 opacity，绝不写 transform（写了会被 js/rulers.js 每帧盖掉）',
+        gadgets.length >= 1 && gadgets.every((r) => /opacity:\s*0/.test(r) && !/transform|translate/.test(r)),
+        gadgets.join(' | '));
+
+    /* --- 5. 刻度时钟：反向播放真的落在 WAAPI 那一侧 --- */
+    ok('★★ 导出 CircleReveal.hide / show（侧边栏开关时喊它）',
+        /window\.CircleReveal\s*=/.test(jsCircle) && /hide\(\)/.test(jsCircle) && /show\(\)/.test(jsCircle));
+    ok('★★ hide 走 play(\'reverse\', false)：把 direction 交给 WAAPI（CSS 改 animation-direction 只会跳，不会演）',
+        /play\('reverse'/.test(jsCircle) && /direction,/.test(jsCircle) && /el\.animate\(frames\(blinks\)/.test(jsCircle));
+    ok('★★ fill 是 both 而不是 forwards（否则 stagger 的延迟期间会掉回 opacity 0 = 后两圈先没了）',
+        /fill:\s*'both'/.test(jsCircle) && !/fill:\s*'forwards'/.test(jsCircle));
+    /* ★★ P67：circlesIn.delay = 4.0 是"从开屏起点算起的第 4 秒"，属于开屏编排。
+       侧边栏那两趟要是也吃它，就会"点了按钮先干等 4 秒才闪"—— 就是这个 bug。 */
+    ok('★★ 侧边栏那两趟不吃 circlesIn.delay（只有开屏登场才吃）',
+        /play\('reverse', false\)/.test(jsCircle) && /play\('normal', false\)/.test(jsCircle) &&
+        /play\('normal', true\)/.test(jsCircle) &&
+        /introDelay \? \(t\.delay \|\| 0\) : 0/.test(jsCircle));
+    ok('★ 降低动效下不演：直接改内联 opacity',
+        /if \(reduce\) \{ hideAll\(\); return; \}/.test(jsCircle) &&
+        /if \(reduce\) \{ showAll\(\); return; \}/.test(jsCircle));
+
+    /* --- 6. 侧边栏两侧都喊了 --- */
+    ok('★★ 开关两侧都喊了刻度时钟（展开闪没、缩回按同一条路闪回来）',
+        /CircleReveal\.hide\(\)/.test(jsSide) && /CircleReveal\.show\(\)/.test(jsSide) &&
+        jsSide.indexOf('CircleReveal.hide()') < jsSide.indexOf('CircleReveal.show()'));
+})();
+
+/* ============================================================
+   2r. 四角刻线朝屏幕的四角飞出（P67）
+   ------------------------------------------------------------
+   点「玩游戏」：四块刻线各自朝自己那一侧的屏幕角飞出去，边飞边变粗，
+   最后一拍化掉；缩回时原路飞回来。
+   ★ 这一版是**纯 CSS** 的：位移直接用刻线框自己的四个内缩量算出来
+     （--content-x / --v-inset / --gutter / --safe-b），一行 JS 都不用。
+     P66 那版要 JS 算每块刻线的位移、跟鼠标、还负责交系统光标 —— 整块删掉了。
+   这一节钉的就是"退回纯 CSS"，外加两条仍在的不变式：
+     · 飞走 / 飞回是**两套时序**（CSS 过渡取"变化之后"那条规则）：
+       飞走最后 150ms 才化掉，飞回立刻显形；
+     · 刻线的层号必须高于 0 层的游乐区，否则整个过场藏在它后面。
+   ============================================================ */
+section('[2r] 四角刻线朝屏幕四角飞出（P67）');
+(function cornerFlyOut() {
+    const jsDraft = codeOnly(read('js/draft-layer.js'));
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const cornerBlk = (cssNC.match(/\.df-corner\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const outBlk = (cssNC.match(/body\.sidebar-open \.df-corner\s*\{[^}]*\}/) || [''])[0];
+    const dirBlk = (k) => ((cssNC.match(new RegExp('body\\.sidebar-open \\.df-' + k + '\\s*\\{([^}]*)\\}')) || ['', ''])[1] || '');
+
+    /* --- 1. 纯 CSS：自绘指针那一套整块不在了 --- */
+    ok('★★ 过场不再由 JS 驱动（DraftMarks / pointerAt / getBoundingClientRect 全都不在 js 里）',
+        !/DraftMarks|pointerAt/.test(jsDraft + jsSide) && !/getBoundingClientRect/.test(jsDraft));
+    ok('★★ 自绘箭头已删（.df-pointer / play-cursor / df-collapsed 都不该再出现）',
+        !/\.df-pointer/.test(cssNC) && !/play-cursor/.test(cssNC) && !/df-collapsed/.test(cssNC));
+
+    /* --- 2. 四块各自朝自己那一侧的屏幕角飞（位移 = 该侧的内缩量 + 24px 余量）--- */
+    ok('★★ 左上：向左上飞（--content-x / --v-inset）',
+        /translate\(calc\(-1 \* var\(--content-x\) - 24px\), calc\(-1 \* var\(--v-inset\) - 24px\)\)/.test(dirBlk('tl')));
+    ok('★★ 右上：向右上飞（--gutter / --v-inset）',
+        /translate\(calc\(var\(--gutter\) \+ 24px\), calc\(-1 \* var\(--v-inset\) - 24px\)\)/.test(dirBlk('tr')));
+    ok('★★ 左下：向左下飞（--content-x / --safe-b）',
+        /translate\(calc\(-1 \* var\(--content-x\) - 24px\), calc\(var\(--safe-b\) \+ 24px\)\)/.test(dirBlk('bl')));
+    ok('★★ 右下：向右下飞（--gutter / --safe-b）',
+        /translate\(calc\(var\(--gutter\) \+ 24px\), calc\(var\(--safe-b\) \+ 24px\)\)/.test(dirBlk('br')));
+    ok('★ 位移量全部来自布局规格（改 --v-inset / --gutter 它自己跟着走，不写死像素）',
+        ['tl', 'tr', 'bl', 'br'].every((k) => /var\(--(content-x|gutter|v-inset|safe-b)\)/.test(dirBlk(k))));
+
+    /* --- 3. 飞走：变粗 + 最后一拍化掉；飞回：立刻显形 --- */
+    ok('★★ 飞走时四块变粗（1px → 3px）', /border-width:\s*3px/.test(outBlk));
+    ok('★★ 飞走最后一拍才化掉、飞回立刻显形（两套时序）',
+        /opacity:\s*0/.test(outBlk) &&
+        /opacity 150ms linear calc\(var\(--sidebar-dur\) - 150ms\)/.test(outBlk) &&
+        /opacity 150ms linear;/.test(cornerBlk) && !/opacity[^;]*calc\(/.test(cornerBlk));
+
+    /* --- 4. 时长仍只有一个来源 --- */
+    ok('★★ 飞走 / 飞回用的是 --sidebar-dur + --panel-ease（和侧边栏滑入、整站右移同一套）',
+        /transform var\(--sidebar-dur\) var\(--panel-ease\)/.test(outBlk));
+
+    /* --- 5. 缩回 = 摘掉 sidebar-open，过渡自己反向跑（没有任何额外状态）--- */
+    ok('★ 缩回不需要额外状态（没有 df-collapsed / df-flown 之类的类）',
+        !/df-(collapsed|flown|flying)/.test(cssNC) && !/df-(collapsed|flown|flying)/.test(jsSide));
+
+    /* --- 6. 光标：立刻交还（不再等箭头落位）--- */
+    ok('★★ 系统光标仍由 body.sidebar-open 立刻交还（过场那 450ms 里也不缺指针）',
+        /body\.sidebar-open,\s*body\.sidebar-open \*\s*\{[^}]*cursor:\s*auto\s*!important/.test(cssNC));
+
+    /* --- 7. 层号：刻线必须画在 0 层的游乐区上面，这个过场才看得见 --- */
+    const zOf = (sel) => +((((cssNC.match(new RegExp(sel + '\\s*\\{[\\s\\S]*?\\n\\}')) || [''])[0]
+        .match(/(?:^|\s)z-index:\s*(\d+)/)) || [])[1] || 0);
+    const sideZ = zOf('\\.play-sidebar');
+    const frameZ = zOf('\\.draft-frame');
+    ok('★★ 刻线层号高于游乐区（' + frameZ + ' > ' + sideZ + '）—— 否则整个过场藏在游乐区后面，白做',
+        frameZ > sideZ);
+})();
+
+/* ============================================================
+   2s. 调整窗口大小不拖影 + |GAME TIME|（P68）
+   ------------------------------------------------------------
+   两件事：
+     · bug —— 侧边栏展开后拖窗口，导航栏的定位会"延迟"：
+       它的 left 是 calc(100vw - …)，窗口一变值就变，而它挂着 450ms 的过渡，
+       于是"跟随窗口"被演成了一段动画。修法：resize 期间挂 body.is-resizing，
+       CSS 把过渡压掉，等 layout 防抖跑完再摘。
+     · 功能 —— 游乐区展开时，导航栏下面那三件装饰淡出、|GAME TIME| 逐个闪出。
+   ============================================================ */
+section('[2s] resize 不拖影 + |GAME TIME|（P68）');
+(function resizeAndGametime() {
+    const jsWorld = codeOnly(read('js/world.js'));
+    const jsDraft = codeOnly(read('js/draft-layer.js'));
+    const stripBlk = (cssNC.match(/\.df-strip\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const gtBlk = (cssNC.match(/\.df-gametime\s*\{[\s\S]*?\n\}/) || [''])[0];
+
+    /* --- 1. resize 期间压掉过渡 --- */
+    ok('★★ resize 一开始就挂 body.is-resizing（world.js）',
+        /addEventListener\('resize', function \(\)\s*\{[\s\S]{0,140}?classList\.add\('is-resizing'\)/.test(jsWorld));
+    ok('★★ 等 layout 防抖跑完、订阅者都跑过之后才摘掉（先摘会把这一趟位移又演成动画）',
+        /for \(const fn of layoutSubs\) fn\(\);[\s\S]{0,320}?classList\.remove\('is-resizing'\)/.test(jsWorld));
+    ok('★★ CSS 有对应的抑制规则，覆盖了会跟着窗口变的那几样（navbar / main / play-sidebar）',
+        /body\.is-resizing \.navbar[\s\S]{0,420}?transition:\s*none\s*!important/.test(cssNC) &&
+        /body\.is-resizing[^{}]*\bmain\b/.test(cssNC) &&
+        /body\.is-resizing \.play-sidebar/.test(cssNC));
+
+    /* --- 2. |GAME TIME| 本体 --- */
+    ok('★ 这行字由 JS 生成（HTML 里没有；它属于 .df-strip 那族装饰）',
+        /'\|GAME TIME\|'\.split\(''\)/.test(jsDraft) && !/df-gametime/.test(html) &&
+        /strip\.appendChild\(gametime\)/.test(jsDraft));
+    ok('★ 一个字符一个 span + --i（"逐个"就靠它）',
+        /createElement\('span'\)/.test(jsDraft) && /setProperty\('--i', String\(i\)\)/.test(jsDraft));
+    ok('★★ 竖向排版：writing-mode: vertical-rl，而且**不翻**（.df-v 那族是从下往上读的）',
+        /writing-mode:\s*vertical-rl/.test(gtBlk) && !/rotate\(180deg\)/.test(gtBlk));
+    ok('★★ 高度 = 推进线那一段（inset: 2px 0，那个 2px 正好是 .df-strip 的上下 padding）',
+        /inset:\s*2px 0/.test(gtBlk) && /padding:\s*2px 0/.test(stripBlk));
+    ok('★★ 绝对定位：三件老装饰淡出时它不参与排版（否则会被挤到轨道旁边去）',
+        /position:\s*absolute/.test(gtBlk) && /position:\s*relative/.test(stripBlk));
+    ok('★ 颜色取 --text-muted、等宽字体（和站名 / 读数同一族）',
+        /color:\s*var\(--text-muted\)/.test(gtBlk) && /ui-monospace/.test(gtBlk));
+    ok('★ 纯装饰不吃鼠标（它是 aria-hidden 那族的一部分）',
+        /pointer-events:\s*none/.test(gtBlk));
+
+    /* --- 3. 淡出 / 闪出 --- */
+    ok('★★ 展开时那三件（站名 / 推进线 / 读数）淡出',
+        /body\.sidebar-open \.df-name,\s*\nbody\.sidebar-open \.df-bar,\s*\nbody\.sidebar-open \.df-read\s*\{[^}]*opacity:\s*0/.test(cssNC));
+    ok('★★ 逐个闪出：每字错开 80ms，用 steps 硬闪（要的是"闪"，不是渐变）',
+        /animation-delay:\s*calc\(var\(--i, 0\) \* 80ms\)/.test(cssNC) &&
+        /steps\(1, end\)/.test(cssNC) && /@keyframes gameTimeBlink/.test(cssNC) &&
+        !/@keyframes gameTimeBlink\s*\{[\s\S]{0,400}?infinite/.test(cssNC));
+    /* --- 4. 收回的时序：先关完游乐区 → |GAME TIME| 淡出 → 三件装饰淡回来 --- */
+    ok('★★ 收回①：|GAME TIME| 等游乐区**完全关掉**（--sidebar-dur）才开始淡出',
+        /\.df-gametime\s*\{[\s\S]*?transition:\s*opacity 200ms linear var\(--sidebar-dur\)/.test(cssNC));
+    const fadeBack = (cssNC.match(/\.df-name,\s*\n\.df-bar,\s*\n\.df-read\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ 收回②：三件装饰（站名 / 推进线 / 读数）接在它后面才淡回来（--sidebar-dur + 200ms）',
+        /transition:\s*opacity 200ms linear calc\(var\(--sidebar-dur\) \+ 200ms\)/.test(fadeBack));
+    ok('★★ 展开时反过来是立刻的：变化之后那条规则（sidebar-open）不带延迟 —— 两套时序',
+        /body\.sidebar-open \.df-name,[\s\S]{0,140}?\{[^}]*transition:\s*opacity 200ms linear;\s*\n\}/.test(cssNC));
+    ok('★ 降低动效：连这些"等关完"的延迟也按掉（transition: none + animation-delay: 0s）',
+        /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]{0,700}?animation-delay:\s*0s/.test(cssNC));
+    ok('★ 降低动效：不闪、直接亮（否则那 0.8s 的错开延迟会让字一个个跳出来）',
+        /@media \(prefers-reduced-motion: reduce\)\s*\{\s*body\.sidebar-open \.df-gametime span\s*\{[^}]*animation:\s*none/.test(cssNC));
+})();
+
+/* ============================================================
+   2t. 开屏补间必须 cancel：否则 .page-zoom 永远是层叠上下文（P74）
+   ------------------------------------------------------------
+   症状（用户量像素量出来的）：游乐区展开后，导航栏的外阴影明显比卡带栏的暗，
+   而同一声明在卡带栏上却正常；把游戏区的背景去掉，两侧立刻一致
+   —— 说明游戏区**盖在**导航栏的阴影上。
+   原因**不是** z-index 被改：`.play-sidebar` 还是 0、`.navbar` 还是 100。
+   而是 `.page-zoom` 一直是**层叠上下文**：main.js 的开屏补间用
+   `fill: 'forwards'` 把 transform 顶成 scale(1)，跑完只清了内联 transform、
+   **没有取消动画** —— 那个"非 none 的 transform"一直留着，于是里面所有
+   z-index（导航栏 100、刻度尺 9996、准星 9997…）都只在它**内部**有效，
+   对外它只是"层号 0 的非定位元素"；而游戏区是 body 的直接子元素、
+   `position: fixed`、DOM 又更靠后 → 整体压在整站之上。
+   （同样的坑 style.css 720 行那段 .draft-frame 的注释里已经写过一次，
+     只是没人想到"动画跑完了它还在"。）
+   ============================================================ */
+section('[2t] 开屏补间必须 cancel（P74）');
+(function introZoomCleanup() {
+    const jsMain = codeOnly(read('js/main.js'));
+    const rawMain = read('js/main.js');
+
+    ok('★★ 开屏补间留了引用（不留引用就没法取消）',
+        /let zoomSettle = null;/.test(jsMain) && /zoomSettle = zoomEl\.animate\(/.test(jsMain));
+    ok('★★ 跑完要 cancel，不能只清内联 transform（只清内联 = transform 仍被动画顶着 scale(1)）',
+        /zoomSettle\.finished\.then\([\s\S]{0,700}?zoomSettle\.cancel\(\)/.test(jsMain));
+    ok('★★ 330ms 那条兜底路径也要 cancel',
+        /if \(zoomSettle\) zoomSettle\.cancel\(\)/.test(jsMain));
+    /* ★ 这条**故意查注释**：坑要写在代码里，下次才不会再"只清内联"。 */
+    ok('★ 注释里写清了为什么必须 cancel（故意查注释：层叠上下文 / fill: forwards）',
+        /层叠上下文/.test(rawMain) && /fill: forwards/.test(rawMain));
+
+    /* 两个 z-index 的大小关系 —— 前提是它们真的在同一个层叠上下文里
+       （= .page-zoom 不能带着 transform / animation）。 */
+    const zOf = (sel) => +((((cssNC.match(new RegExp(sel + '\\s*\\{[\\s\\S]*?\\n\\}')) || [''])[0]
+        .match(/(?:^|\s)z-index:\s*(-?\d+)/)) || [])[1] || 0);
+    ok('★★ 游戏区（' + zOf('\\.play-sidebar') + '）低于导航栏（' + zOf('\\.navbar') +
+        '）—— 只有 .page-zoom 不自建上下文时这条才作数',
+        zOf('\\.play-sidebar') < zOf('\\.navbar'));
+
+    /* 卡带栏不许再有 z-index：它要靠"不动 z-index"压在舞台背景之上，
+       和导航栏同一种构造（里面被自己的背景压暗、外面亮）。 */
+    const railBlk = (cssNC.match(/\.play-rail\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('★★ 卡带栏里不再有 z-index（那行 -10 是当时的临时手段，只会压暗卡带栏一侧）',
+        !/(?:^|\s)z-index\s*:/.test(railBlk));
+})();
+
+/* ============================================================
+   2u. 游乐区：默认提示 + 卡带悬停回执 + 屏蔽量取回执（P75）
+   ------------------------------------------------------------
+   三件事：
+     · 默认**不选**任何卡带，舞台显示「从左侧卡带栏拖动游戏到此处启动游戏」；
+     · 鼠标悬停卡带时用回执（.cursor-toast）显示这条游戏的简述，
+       实时跟随鼠标、离开就摘掉；键盘聚焦也显示（这条不该只有鼠标能用）；
+     · 游乐区里不做框选量取 —— 尤其不许弹那条"按 G 开启参考系…"的回执
+       （它在这里既没意义、又会盖在舞台上）。
+   ============================================================ */
+section('[2u] 游乐区：默认提示 + 卡带悬停回执（P75）');
+(function playHints() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const jsCross = codeOnly(read('js/crosshair.js'));
+    const hintCss = (cssNC.match(/\.play-hint\s*\{[^}]*\}/) || [''])[0];
+    const followCss = (cssNC.match(/\.cursor-toast\.is-follow\s*\{[^}]*\}/) || [''])[0];
+
+    /* --- 1. 默认提示 --- */
+    ok('★★ 那句提示写在 HTML 里，舞台默认 data-state="empty"',
+        /data-state="empty"/.test(html) &&
+        /class="play-hint"[^>]*>从左侧卡带栏拖动游戏到此处启动游戏</.test(html));
+    ok('★★ empty 藏起规格、非 empty 藏起提示（两句不同时出现）',
+        /\.play-body\[data-state="empty"\] \.play-spec[\s\S]{0,90}?display:\s*none/.test(cssNC) &&
+        /\.play-body:not\(\[data-state="empty"\]\) \.play-hint[\s\S]{0,90}?display:\s*none/.test(cssNC));
+    ok('★ 提示取 --text-muted 并居中', /color:\s*var\(--text-muted\)/.test(hintCss) && /text-align:\s*center/.test(hintCss));
+    ok('★★ 不再有"默认选中第一张"（那行 select(games[0].id) 必须删掉）',
+        !/select\(games\[0\]/.test(jsSide) &&
+        /* P81：状态由"是不是正在跑这一条"决定 —— play / game 两种 */
+        /dataset\.state = \(playingGame === id\) \? 'play' : 'game'/.test(jsSide));
+
+    /* --- 2. 悬停回执 --- */
+    ok('★★ 悬停 / 聚焦卡带会生成回执，内容取自 works.js 的 desc（唯一数据源）',
+        /btn\.addEventListener\('mouseenter'/.test(jsSide) &&
+        /showGameToast\(w, /.test(jsSide) && /w\.desc \|\| w\.title/.test(jsSide));
+    ok('★★ 跟随鼠标：位置写在 transform 上，并且夹回视口内',
+        /toastEl\.style\.transform = 'translate\('/.test(jsSide) &&
+        /Math\.max\(8, Math\.min\(x \+ 14/.test(jsSide));
+    ok('★★ 鼠标离开 / 关闭游乐区都摘掉（不留常驻节点）',
+        /* ★ P77：mouseleave 那行外面套了一层（先清 hovered 再摘回执），
+           所以这里只要求"离开时确实调了 hideGameToast"。 */
+        /addEventListener\('mouseleave'[\s\S]{0,120}?hideGameToast\(\)/.test(jsSide) &&
+        /function hideGameToast\(\)[\s\S]{0,140}?toastEl\.remove\(\)/.test(jsSide) &&
+        /hideGameToast\(\);\s*\n\s*\}/.test(jsSide));
+    ok('★ 键盘聚焦也能看到这条简述（摆在卡带右侧，不跟随）',
+        /addEventListener\('focus'/.test(jsSide) && /getBoundingClientRect\(\)/.test(jsSide));
+    ok('★★ 回执外观复用 .cursor-toast + .is-follow（不淡出、不自己消失、能换行）',
+        /animation:\s*none/.test(followCss) && /white-space:\s*normal/.test(followCss) &&
+        /max-width:\s*260px/.test(followCss));
+
+    /* --- 3. 游乐区里屏蔽量取回执（能力保留） --- */
+    ok('★★ 游乐区开着时量取的两条回执都不弹（inPlay 短路）',
+        /const inPlay = document\.body\.classList\.contains\("sidebar-open"\);/.test(jsCross) &&
+        /if \(!inPlay\) showToast\("请等待页面静止…"/.test(jsCross) &&
+        /if \(!inPlay\) showToast\("按 G 开启参考系…"/.test(jsCross));
+    ok('★★ 但能力保留：按了 G 照样 beginDrag（不是把量取整块禁掉）',
+        /\} else \{\s*\n\s*beginDrag\(\);\s*\n\s*\}/.test(jsCross));
+    ok('★ 仍然是"作废这一次按下"而不是 return（return 会让准星卡在原地）',
+        /refusedDrag = true;[\s\S]{0,200}?refusedDrag = true;[\s\S]{0,260}?beginDrag\(\);/.test(jsCross));
+})();
+
+/* ============================================================
+   2v. 游乐区里的回执：去投影 + 纯白（两个主题各一个钩子）（P76）
+   ------------------------------------------------------------
+   基类那两层 text-shadow 是为了"压在任意内容上都要读得清"；
+   但游乐区的舞台是一整块暗面板（--navbar-bg，深浅两套主题都是暗的），
+   不需要它，而且在舞台中央那圈投影显脏。字色改成主题钩子。
+   ============================================================ */
+section('[2v] 游乐区回执：去投影 + 纯白（P76）');
+(function playToastInk() {
+    const dark = (cssNC.match(/:root\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const light = (cssNC.match(/:root\.light\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const baseToast = (cssNC.match(/\.cursor-toast\s*\{[^}]*\}/) || [''])[0];
+    const playToast = (cssNC.match(/body\.sidebar-open \.cursor-toast\s*\{[^}]*\}/) || [''])[0];
+
+    ok('★★ 暗色主题的钩子：--play-toast-ink: #fff',
+        /--play-toast-ink:\s*#fff/i.test(dark));
+    ok('★★ 亮色主题的钩子也在（面板仍是暗的，所以默认也留纯白）',
+        /--play-toast-ink:\s*#fff/i.test(light));
+    ok('★★ 游乐区里那条回执：字色走钩子、投影去掉',
+        /color:\s*var\(--play-toast-ink,\s*#fff\)/.test(playToast) &&
+        /text-shadow:\s*none/.test(playToast));
+    ok('★ 基类那两层投影还在（游乐区**外面**的回执仍要压在任意内容上读得清）',
+        /text-shadow:\s*0 0 6px/.test(baseToast));
+})();
+
+/* ============================================================
+   2w. 鼠标点一下不许把跟随回执顶走（P77）
+   ------------------------------------------------------------
+   症状：悬停卡带（回执在鼠标旁边）时点一下，回执先跳到卡带**顶端**闪一下，
+   再被下一次 mousemove 拉回鼠标旁。
+   原因：点击会给按钮焦点，而 focus 分支是"键盘那套"（摆在卡带右上角、
+   不跟随）—— 鼠标的跟随回执被它重建了一遍。
+   做法：每张卡带自己记一个 `hovered`，鼠标还停着时 focus / blur 都不动作。
+   ============================================================ */
+section('[2w] 鼠标点一下不许顶走跟随回执（P77）');
+(function hoverVsFocus() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+
+    ok('★★ focus 分支先看 hovered：鼠标点出来的焦点不重建回执',
+        /let hovered = false;/.test(jsSide) &&
+        /addEventListener\('focus', function \(\) \{\s*\n\s*if \(hovered\) return;/.test(jsSide));
+    ok('★★ 对称地：鼠标还停着时 blur 也不摘（点了舞台、卡带跟着失焦）',
+        /addEventListener\('blur', function \(\) \{\s*\n\s*if \(!hovered\) hideGameToast\(\);/.test(jsSide));
+    ok('★ mouseenter / mouseleave 成对维护 hovered',
+        /addEventListener\('mouseenter'[\s\S]{0,90}?hovered = true;/.test(jsSide) &&
+        /addEventListener\('mouseleave'[\s\S]{0,90}?hovered = false;/.test(jsSide));
+    /* ★★ P77b：mousemove / mousedown 都走**幂等入口** ——
+       不在就补回来、在就只挪位置；"关门那 450ms 里冒多余回执"这个顾虑改由
+       `closing` 闸门挡住（比 P77 那版"干脆不重生"更稳：真机上确实有一条
+       我们没抓稳的事件链会把回执摘掉）。 */
+    ok('★★ 鼠标一动 / 一按都走幂等入口（不在就补回、在就只挪位置；点过的除外）',
+        /function ensureToast\(x, y, hard\)/.test(jsSide) &&
+        /if \(closing \|\| !hovered(?: \|\| clicked)?\) return;/.test(jsSide) &&
+        /if \(toastEl && !toastEl\.isConnected\) toastEl = null;/.test(jsSide) &&
+        /if \(hard \|\| !toastEl\) showGameToast\(w, x, y\);/.test(jsSide));
+    ok('★ mousedown 走硬刷新（同一帧 remove + append 不会闪），mousemove 走轻路径',
+        /addEventListener\('mousedown', function \(e\) \{ ensureToast\(e\.clientX, e\.clientY, true\); \}\)/.test(jsSide) &&
+        /addEventListener\('mousemove', function \(e\) \{ ensureToast\(e\.clientX, e\.clientY, false\); \}\)/.test(jsSide));
+    ok('★★ 关门时立 closing、开门时清掉（回执不许在关门路上冒出来）',
+        /isOpen = true;\s*\n\s*closing = false;/.test(jsSide) &&
+        /closing = true;/.test(jsSide));
+    ok('★ 键盘那份仍然摆到卡带右侧（getBoundingClientRect 还在 focus 分支里）',
+        /if \(hovered\) return;[\s\S]{0,200}?getBoundingClientRect\(\)/.test(jsSide));
+})();
+
+/* ============================================================
+   2x. 拖卡带到舞台启动（P78 起，P80 换成指针拖拽）+ 点过之后回执收起来
+   ------------------------------------------------------------
+   P78 用的是原生 HTML5 拖放：接线全对，但这个站全局禁着拖拽
+   （`-webkit-user-drag: none` 会继承 + document 级 dragstart 的 preventDefault），
+   P79 把两处后门都开了，鼠标**仍然**拖不动 —— 于是 P80 换成自己实现的指针拖拽：
+     · 只依赖 pointerdown / pointermove / pointerup（鼠标、触屏同一条路）；
+     · **位移阈值**区分"点击"和"拖动"（DRAG_MIN，和 crosshair.js 一个套路，不用长按）；
+     · 抓住指针（setPointerCapture），拖出卡带之后事件仍然回来；
+     · 松手时自己算坐标判断落点在不在舞台上（overStage 读舞台 rect）。
+   ============================================================ */
+section('[2x] 拖卡带到舞台启动（P78/P80）');
+(function dragToLaunch() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const dropCss = (cssNC.match(/\.play-body\.is-drop\s*\{[^}]*\}/) || [''])[0];
+    const dragCss = (cssNC.match(/\.play-body\.is-dragging\s*\{[^}]*\}/) || [''])[0];
+    const ghostCss = (cssNC.match(/\.play-cart\.is-ghost\s*\{[^}]*\}/) || [''])[0];
+
+    ok('★★ 拖拽是自己实现的（pointerdown/move/up），原生拖放那套已经删干净',
+        /addEventListener\('pointerdown'/.test(jsSide) &&
+        /addEventListener\('pointermove'/.test(jsSide) &&
+        /addEventListener\('pointerup'/.test(jsSide) &&
+        !/dataTransfer/.test(jsSide) && !/btn\.draggable/.test(jsSide));
+    ok('★★ 位移阈值区分点击与拖动（DRAG_MIN；曼哈顿距离，和 crosshair.js 同一套写法）',
+        /const DRAG_MIN = \d+;/.test(jsSide) &&
+        /Math\.abs\(e\.clientX - downAt\.x\) \+ Math\.abs\(e\.clientY - downAt\.y\) >= DRAG_MIN/.test(jsSide));
+    ok('★★ 抓住指针 + pointercancel 收尾（拖出去、触屏被打断都能收干净）',
+        /setPointerCapture\(e\.pointerId\)/.test(jsSide) && /addEventListener\('pointercancel'/.test(jsSide));
+    ok('★★ 落点在舞台上才算启动（先 select 再 startGame）；落外面作废',
+        /function overEl\(el, x, y\)/.test(jsSide) &&
+        /const overStage = \(x, y\) => overEl\(stageEl, x, y\);/.test(jsSide) &&
+        /if \(overStage\(e\.clientX, e\.clientY\)\) \{[\s\S]{0,120}?select\(w\.id\);[\s\S]{0,120}?startGame\(\);/.test(jsSide) &&
+        /if \(!wasDrag\) return;/.test(jsSide) &&
+        /swallowClick = overEl\(btn, e\.clientX, e\.clientY\);/.test(jsSide) &&
+        /addEventListener\('pointerdown'[\s\S]{0,200}?swallowClick = false;/.test(jsSide));
+    ok('★★ 拖动期间先把跟随回执收掉（否则它会一路贴着鼠标飞）',
+        /addEventListener\('pointermove'[\s\S]{0,300}?startDrag\(e\)/.test(jsSide) &&
+        /function startDrag\(e\)[\s\S]{0,200}?hideGameToast\(\);/.test(jsSide));
+    ok('★★ 跟着指针的那张"浮起卡带"：只写 transform、不吃事件、固定定位',
+        /translate\(' \+ \(x - 20\) \+ 'px, ' \+ \(y - 20\) \+ 'px\)/.test(jsSide) &&
+        /position:\s*fixed/.test(ghostCss) && /pointer-events:\s*none/.test(ghostCss));
+    ok('★★ 拖完那一下的 click 被吃掉（否则状态会再跳一次）',
+        /if \(swallowClick\) \{ swallowClick = false; e\.preventDefault\(\); return; \}/.test(jsSide));
+    ok('★ 拖动中按 Esc 作废', /addEventListener\('keydown'[\s\S]{0,240}?endDrag\(\);/.test(jsSide));
+    ok('★ 两个状态的样式：虚线 = 可以放，实线 + 主题红 = 正压在上面',
+        /border-style:\s*dashed/.test(dragCss) && /border-style:\s*solid/.test(dropCss) &&
+        /border-color:\s*var\(--accent\)/.test(dropCss));
+    ok('★ 卡带光标改成 grab（P85 起还带上了卡带里的文字 —— 详见 [2ac]）',
+        /body\.sidebar-open \.play-cart,\s*\n?body\.sidebar-open \.play-cart \*\s*\{\s*\n?\s*cursor:\s*grab/.test(cssNC));
+    ok('★★ 卡带上拦掉浏览器的手势接管（touch-action: none）—— 否则触屏拖动会被当成滚动取消',
+        /\.play-cart\s*\{[\s\S]*?touch-action:\s*none/.test(cssNC));
+
+    ok('★★ 点过的那张：回执收起来，直到鼠标移出（clicked 闸门）',
+        /let clicked = false;/.test(jsSide) &&
+        /clicked = true;/.test(jsSide) &&
+        /if \(closing \|\| !hovered \|\| clicked\) return;/.test(jsSide) &&
+        /* ★ 注意：jsSide 是 codeOnly() 过的 —— 注释被换成空格了，
+           所以这里绝不能拿注释里的字当锚点（第一版就是这么假红的）。 */
+        /addEventListener\('mouseleave'[\s\S]{0,140}?clicked = false;/.test(jsSide));
+})();
+
+/* ============================================================
+   2y. 拖动的实现路线：从"给全局封锁开后门"改成"自己实现指针拖拽"（P79 → P80）
+   ------------------------------------------------------------
+   P79 的发现没错：这个站有两道全局封锁挡着**原生**拖放 ——
+     ① `body { -webkit-user-drag: none }`（会继承）；
+     ② document 级 `dragstart` 无条件 preventDefault()。
+   两处都开了后门之后，用户的鼠标**仍然**拖不动 → 于是 P80 不再跟 UA 的门槛
+   猜：拖动改成自己实现的指针拖拽（pointerdown/move/up + 位移阈值），
+   跟这两个属性、跟原生拖放事件完全无关。所以：
+     · 两条全局封锁**恢复原状**（后门撤掉）；
+     · 卡带也不再声明 draggable / 不再恢复 -webkit-user-drag；
+     · 但 crosshair.js 那个手势冲突（mousedown 起步的框选量取）仍然要挡 ——
+       它和用什么方式实现拖动无关。
+   ============================================================ */
+section('[2y] 拖动路线：指针拖拽，不依赖原生拖放（P79 → P80）');
+(function allowCartDrag() {
+    const jsMain = codeOnly(read('js/main.js'));
+    const jsSide = codeOnly(read('js/sidebar.js'));
+
+    ok('★ 全局那条 reset 仍在（body 上 user-drag / touch-callout 都是 none）',
+        /-webkit-user-drag:\s*none/.test(cssNC) && /-webkit-touch-callout:\s*none/.test(cssNC));
+    ok('★★ 全局 dragstart 恢复成一律 preventDefault —— P79 那个"卡带例外"已撤',
+        /addEventListener\('dragstart'[\s\S]{0,320}?e\.preventDefault\(\);/.test(jsMain) &&
+        !/closest\('\.play-cart'\)/.test(jsMain));
+    ok('★★ 卡带也不再要 draggable / 不再恢复 -webkit-user-drag（指针拖拽用不上）',
+        !/btn\.draggable/.test(jsSide) &&
+        !/\.play-cart \*\s*\{[^}]*-webkit-user-drag/.test(cssNC));
+
+    /* ★★ 顺带排掉一个冲突：crosshair.js 的框选量取也是从 mousedown 起步的。
+       在卡带上按下时它必须让开 —— 否则（尤其参考线开着时）拖卡带会同时
+       画出一个量取框，两个拖拽手势打架。 */
+    ok('★★ 按在卡带上时，框选量取让开（不开始 pressing）',
+        /addEventListener\("mousedown"[\s\S]{0,400}?closest\('\.play-cart'\)[\s\S]{0,80}?pressing = false;[\s\S]{0,40}?return;/
+            .test(codeOnly(read('js/crosshair.js'))));
+})();
+
+/* ============================================================
+   2z. 开始游戏：iframe 惰性挂载 + 开门复位（P81）
+   ------------------------------------------------------------
+   两件事：
+     · 真装"开始游戏"：拖到舞台上 / 点「开始游戏」→ 往 .play-stage 里挂一个
+       iframe（src 取自 works.js）。惰性 = 设 src 那一刻才开始下那 14~23MB；
+       换游戏 / 关门都 replaceChildren 清掉（释放 WebGL 上下文）。
+     · 关掉再打开要回到干净状态：复位放在**开门时**（那会儿面板还在屏幕外，
+       复位谁也看不见），而不是关门时（面板正在滑走，换内容看得出来）。
+   ============================================================ */
+section('[2z] 开始游戏：iframe 惰性挂载 + 开门复位（P81）');
+(function mountGame() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const loadingCss = (cssNC.match(/\.play-loading\s*\{[^}]*\}/) || [''])[0];
+    const frameCss = (cssNC.match(/\.play-frame\s*\{[^}]*\}/) || [''])[0];
+    const stageCss = (cssNC.match(/\.play-stage\s*\{[^}]*\}/) || [''])[0];
+
+    ok('★★ 舞台里多了"游戏层"（.play-stage），iframe 挂它里面',
+        /<div class="play-stage" data-play="stage"><\/div>/.test(html) &&
+        /const playStage = aside\.querySelector\('\[data-play="stage"\]'\)/.test(jsSide));
+    /* ★ 原来这里用一个 1200 字的窗口去"框住" frame.src 那行 —— 后来 startGame 里
+       多挂了几件事（guardDoc / hookConsole / registerAudio）就框不住了 ✗。
+       改成断言**不变量**：全文件只有一处给 frame 设 src、而且取自 w.src ✓
+       （引号也不挑：格式化器会把 ' 换成 " ✓）。 */
+    ok('★★ 惰性：只有 startGame() 才设 src，而且 src 取自 works.js（没有写死的路径）',
+        (jsSide.match(/frame\.src = w\.src;/g) || []).length === 1 &&
+        /function startGame\(\)[\s\S]*?frame\.src = w\.src;/.test(jsSide) &&
+        !/\.src = ['"]assets\//.test(jsSide));
+    ok('★★ 卸载时机：换游戏 / 关门都 replaceChildren（WebGL 上下文很贵）',
+        fnBody(jsSide, 'stopGame').indexOf('replaceChildren()') !== -1 &&
+        /if \(playingGame && playingGame !== id\) stopGame\(\);/.test(jsSide) &&
+        /* P82：关门那条改走 exitGame()（= stopGame + 退回详情页） */
+        /closing = true;[\s\S]{0,120}?exitGame\(\);/.test(jsSide) &&
+        /function exitGame\(\)[\s\S]{0,160}?stopGame\(\);/.test(jsSide));
+    /* ★ 引号不挑：格式化器会把 ' 换成 "，断言只该管行为 ✓（下面几处同理） */
+    ok('★★ 载入层：iframe 的 load 一到就加 is-loaded，CSS 里淡掉',
+        /addEventListener\(['"]load['"], function \(\)[\s\S]{0,200}?classList\.add\(['"]is-loaded['"]\)/.test(jsSide) &&
+        /\.play-body\.is-loaded \.play-loading\s*\{[^}]*opacity:\s*0/.test(cssNC));
+    ok('★ 载入层底色用面板色（顺手挡住 Unity 首帧白闪）；iframe 自己垫黑',
+        /background:\s*var\(--navbar-bg/.test(loadingCss) && /background:\s*#000/.test(frameCss));
+    ok('★★ 游戏层平时不吃事件（否则盖住「开始游戏」按钮），进 play 才放开',
+        /pointer-events:\s*none/.test(stageCss) &&
+        /\[data-state="play"\] \.play-stage\s*\{[^}]*pointer-events:\s*auto/.test(cssNC));
+    ok('★★ 开门时复位：选中置空 + 状态回 empty + 卡带按下态清掉 + 回执收掉',
+        /function resetStage\(\)[\s\S]{0,520}?dataset\.state = 'empty'/.test(jsSide) &&
+        /function open\(from\)[\s\S]{0,420}?resetStage\(\);/.test(jsSide) &&
+        /aria-pressed', 'false'/.test(jsSide) && /cartResets\.forEach/.test(jsSide));
+    ok('★ 「开始游戏」按钮接上了（点击选中那条路也能开）',
+        /data-play="start"/.test(html) &&
+        /startBtn\.addEventListener\('click', function \(\) \{ startGame\(\); \}\)/.test(jsSide));
+    ok('★ iframe 的权限写全（全屏 / 自动播放 / 手柄）',
+        /setAttribute\(['"]allow['"], ['"]fullscreen; autoplay; gamepad['"]\)/.test(jsSide) &&
+        /setAttribute\(['"]allowfullscreen['"], ['"]['"]\)/.test(jsSide));
+
+    /* ★★ P82：游戏自己喊"我退出了" —— 桌面版的 Application.Quit() 在网页里
+       会把 WebGL 播放循环停掉（最后一帧留在画布上 = "卡住"），站点接不住它，
+       但可以约定一句 postMessage：收到就拔 iframe、退回这条游戏的详情页。 */
+    ok('★★ 接住游戏发来的"我退出了"（postMessage），收到就 exitGame()',
+        /window\.addEventListener\('message'/.test(jsSide) &&
+        /function msgKind\(data\)/.test(jsSide) &&          // P86 起两种协议都从这里判
+        /if \(kind === EXIT_MSG\) \{[\s\S]{0,120}?exitGame\(\);/.test(jsSide));
+    ok('★★ 只认当前那个 iframe 发来的消息（比对 e.source，别被别的窗口骗了）',
+        /e\.source !== frame\.contentWindow\) return;/.test(jsSide));
+    ok('★ 退出 = 卸 iframe + 退回详情页（不是留一个空舞台）',
+        /function exitGame\(\)[\s\S]{0,160}?stopGame\(\);[\s\S]{0,160}?dataset\.state = 'game'/.test(jsSide));
+})();
+
+section('[2aa] 把浏览器抢走的键盘 / 右键还给游戏（P83）');
+(function handBackKeys() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+
+    /* 现象：游戏里的 Ctrl+R 被浏览器当成"刷新页面"执行了；右键长按被手势工具接手。
+       关键真相：**必须由按键所在的那份文档来拦** —— 焦点进了 iframe，
+       父页面的监听什么都收不到。所以守卫要挂两份。 */
+    ok('★★ 守卫挂两份：父页面一份，iframe 那份文档一份（焦点在游戏里时父页面收不到键）',
+        /guardDoc\(document\)/.test(jsSide) &&
+        /guardDoc\(frame\.contentDocument\)/.test(jsSide));
+    ok('★ 伸手进 iframe 之前要能失败：跨源时 contentDocument 会抛，包在 try 里',
+        /try \{ guardDoc\(frame\.contentDocument\); \} catch/.test(jsSide));
+    ok('★ 挂在 load 回调里挂（那一刻文档才在，且 iframe 每次 load 都要重挂）',
+        /addEventListener\(['"]load['"], function \(\)[\s\S]{0,400}?guardDoc\(frame\.contentDocument\)/.test(jsSide) &&
+        /doc\.__playGuarded/.test(jsSide));            // 自己给自己做去重标记
+
+    /* ★★ 只拦"会毁掉游戏进程"的那几个：不做全键盘吞掉 */
+    ok('★★ 拦的是 keydown + preventDefault（拦的是浏览器默认动作，不是事件传播 → 游戏照样收得到）',
+        /addEventListener\('keydown', function \(e\) \{\s*if \(isBrowserAction\(e\)\) e\.preventDefault\(\)/.test(jsSide));
+    ok('★ 右键菜单同理：两份文档都 preventDefault，浏览器的菜单才不会从游戏画面上弹出来',
+        /addEventListener\('contextmenu', function \(e\) \{\s*if \(playingGame && keyGuardOn\) e\.preventDefault\(\)/.test(jsSide) &&
+        /playStage\.addEventListener\('contextmenu'/.test(jsSide));
+    ok('★★ 整条守卫由 works.js 的 keyGuardOn 管 —— 默认 false（不写就是"什么都不拦"）',
+        /function isBrowserAction\(e\) \{\s*if \(!playingGame \|\| !keyGuardOn\) return false;/.test(jsSide) &&
+        /keyGuardOn = !!w\.keyGuardOn;/.test(jsSide) &&
+        fnBody(jsSide, 'stopGame').indexOf('keyGuardOn = false;') !== -1);
+    ok('★ 右键菜单归同一个开关管（不能"键拦了、菜单还照样弹"）',
+        /addEventListener\('contextmenu', function \(e\) \{\s*if \(playingGame && keyGuardOn\) e\.preventDefault\(\);/.test(jsSide) &&
+        (jsSide.match(/playingGame && keyGuardOn/g) || []).length === 2);
+    ok('★ 数据里那两项是布尔（true / false 都合法 —— 别把断言钉在某一侧）',
+        /keyGuardOn: (true|false),/.test(read('data/works.js')) &&
+        /noticeOn: (true|false),/.test(read('data/works.js')));
+    /* ★★ P84：你的游戏绑定是一大堆（Ctrl+T/E/1/2/`/-/= …）。
+       逐个列举永远漏，所以改成"带修饰键的一律拦" —— 以后加绑定不用改代码。 */
+    ok('★★ 改成"带 Ctrl / Cmd / Alt 的一律拦"，不再逐个列举（旧的白名单必须删掉）',
+        /if \(e\.ctrlKey \|\| e\.metaKey\) return ESCAPE_COMBO\.indexOf\(k\) === -1;/.test(jsSide) &&
+        /if \(e\.altKey\) return true;/.test(jsSide) &&
+        !/BLOCKED_COMBO/.test(jsSide));
+    ok('★ F1-F10 一起拦（抢焦点、弹帮助那一排），但 F11 全屏 / F12 控制台必须留着',
+        /FUNCTION_KEYS = \['F1', 'F2'[\s\S]{0,60}?'F10'\]/.test(jsSide) &&
+        !/FUNCTION_KEYS = \[[^\]]*F1[12]/.test(jsSide));
+    ok('★★ Ctrl+W（关标签）是逃生口：游戏卡住时你得能跑掉',
+        /ESCAPE_COMBO = \['w'\]/.test(jsSide));
+    ok('★★ 输入框里放行 —— Unity 的 WebGL 文本输入靠一个隐藏 input 转手，吃了 Ctrl+V/A/X 游戏里就打不了字',
+        /t\.isContentEditable/.test(jsSide) && /INPUT\|TEXTAREA\|SELECT/.test(jsSide));
+})();
+
+/* ============================================================
+   2ab. 「游玩注意」：游戏区下方那块提示（P84）
+   ============================================================ */
+section('[2ab] 游玩注意：开关 + 内容都在 works.js（P84）');
+(function noticeBlock() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const cssNotice = (cssNC.match(/\.play-notice\s*\{[^}]*\}/) || [''])[0];
+
+    ok('★★ 游戏区**下方**有一块 .play-notice，而且默认是 hidden',
+        /<section class="play-notice" data-play="notice" hidden>/.test(html) &&
+        html.indexOf('data-play="stage"') < html.indexOf('data-play="notice"'));
+    ok('★ 标题 + 一列容器（内容由 JS 按 works.js 渲染，不写死在 HTML 里）',
+        /data-play="notice-list"/.test(html) && /class="play-notice-title"/.test(html));
+    /* ★★ 这条是踩过的坑：给隐藏元素写了 display，author 就会盖掉 UA 的
+       [hidden] { display: none }，那块永远藏不住。 */
+    ok('★★ 默认隐藏用 hidden 属性，CSS 里**不许**给 .play-notice 写 display',
+        cssNotice.length > 0 && !/display\s*:/.test(cssNotice));
+    ok('★ 内容长了不许把游戏区挤没（max-height + overflow-y）',
+        /max-height:\s*[\d.]+dvh/.test(cssNotice) && /overflow-y:\s*auto/.test(cssNotice));
+    ok('★ 开关与内容都是 works.js 的字段：noticeOn + notice',
+        /if \(typeof lines === 'string'\) lines = lines\.split\('\\n'\)/.test(jsSide) &&
+        /let lines = \(w && w\.noticeOn\) \? w\.notice : null;/.test(jsSide));
+    ok('★★ 选中卡带就渲染（不必等按开始），复位时收掉',
+        /renderNotice\(w\);/.test(jsSide) &&
+        /function resetStage\(\)[\s\S]{0,320}?renderNotice\(null\);/.test(jsSide));
+    /* ★ 这条原来写的是"两条都是 false、不许出现 true" —— 后来**你自己**把
+       boom-shooting / fission 的 noticeOn 打开了，于是它开始误报 ✗。
+       语义上没有"必须关着"这回事（代码里不写就是关 ✓），所以改成"每条 unity
+       都要写这个字段，值是布尔"，不再管你到底开没开 ✓。 */
+    const wSrc = read('data/works.js');
+    /* ★ 只数**数据行**：注释里也会出现 `kind: 'unity'`（文件头那段说明），
+       所以带尾部逗号才算一条真数据 ✓（教训：别拿注释里的字当锚点）。 */
+    const unityCount = (wSrc.match(/kind: 'unity',/g) || []).length;
+    const noticeCount = (wSrc.match(/noticeOn: (true|false),/g) || []).length;
+    ok('★ 每条 unity 都写了 noticeOn（' + noticeCount + '/' + unityCount + '；布尔值，不写 = 默认关）',
+        unityCount > 0 && noticeCount >= unityCount);
+})();
+
+/* ============================================================
+   2ac. 卡带的光标：抓着 / 握住（P85）
+   ============================================================ */
+section('[2ac] 卡带光标："抓" 与拖动中的 "握住"（P85）');
+(function cartCursor() {
+    /* ★★ 根因：光标取的是"指针下**最深**的那个元素"。`body.sidebar-open *`
+       （0,1,1）那条 cursor: auto !important 管着 .play-cart-no / -name
+       这些孩子 —— 所以光标一移到卡带的文字上就变回箭头。孩子必须点名。 */
+    ok('★★ 卡带 + 卡带里的文字都是"抓"（只写 .play-cart 会被它的孩子顶掉）',
+        /body\.sidebar-open \.play-cart,\s*body\.sidebar-open \.play-cart \*\s*\{[^}]*cursor:\s*grab !important/.test(cssNC));
+    ok('★★ 按住（:active）→ "握住"',
+        /body\.sidebar-open \.play-cart:active,\s*body\.sidebar-open \.play-cart:active \*\s*\{[^}]*cursor:\s*grabbing !important/.test(cssNC));
+    ok('★★ 拖动期间整块面板都是"握住"（挂在 body 上 —— 抓住指针后指针早就不在卡带上了）',
+        /body\.is-cart-dragging,[\s\S]{0,320}?cursor:\s*grabbing !important/.test(cssNC) &&
+        /body\.is-cart-dragging \.play-close[\s\S]{0,240}?cursor:\s*grabbing !important/.test(cssNC));
+    ok('★★ 拖动期间游戏层不吃指针 —— 否则滑过"正在跑的游戏"时，光标归 iframe 里那份文档管，"握住"断在那儿',
+        /\.play-body\.is-dragging \.play-stage\s*\{[^}]*pointer-events:\s*none/.test(cssNC));
+    ok('★ 落点判定用的是 stageEl 的矩形，不靠 pointer-events —— 所以上面那条关得放心',
+        /const overStage = \(x, y\) => overEl\(stageEl, x, y\);/.test(codeOnly(read('js/sidebar.js'))) &&
+        /\.getBoundingClientRect\(\)/.test(codeOnly(read('js/sidebar.js'))));
+    ok('★ 拖动开始 / 收尾各自加、摘 body 上那个类',
+        /function startDrag[\s\S]{0,520}?body\.classList\.add\('is-cart-dragging'\)/.test(codeOnly(read('js/sidebar.js'))) &&
+        /function endDrag[\s\S]{0,420}?body\.classList\.remove\('is-cart-dragging'\)/.test(codeOnly(read('js/sidebar.js'))));
+})();
+
+/* ============================================================
+   2ad. 游戏发来的回执（P86）
+   ============================================================ */
+section('[2ad] 游戏 → 站点：屏幕上的回执（P86）');
+(function gameMessage() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const msgCss = (cssNC.match(/\.play-msg\s*\{[^}]*\}/) || [''])[0];
+
+    ok('★★ 游戏层里多了一个 .play-msg（排在 .play-stage 之后 → 盖在画面上）',
+        /<div class="play-msg" data-play="msg" role="status"/.test(html) &&
+        html.indexOf('data-play="stage"') < html.indexOf('data-play="msg"'));
+    ok('★ 读屏会念（role=status + aria-live）', /aria-live="polite"/.test(html));
+    ok('★★ 它不能挡住游戏吃鼠标（贴字，不是盖一层玻璃）',
+        /pointer-events:\s*none/.test(msgCss) && /position:\s*absolute/.test(msgCss) &&
+        /z-index:\s*\d/.test(msgCss));
+    /* ★★ 这一段字是运行时从游戏来的，站点预知不了 —— 用展示字体的话，一个子集外的字
+       就会去拉 3.2MB 的 HuXiaoBo-Full。所以这里必须是系统字体。 */
+    ok('★★ 回执用系统字体（运行时文字 → 别为了一个生僻字去拉 3.2MB 的原字体）',
+        /font-family:\s*system-ui/.test(msgCss) && /\.play-msg\.is-on/.test(cssNC));
+
+    ok('★★ 两种协议都认：字符串前缀（jslib 拼字符串最省事）+ 对象（能带 ms）',
+        /const MSG_KIND = 'resolualysis:play-msg';/.test(jsSide) &&
+        /data\.indexOf\(MSG_KIND\) === 0/.test(jsSide) &&
+        /showMessage\(data\.text, data\.ms\);/.test(jsSide));
+    ok('★ 字符串里那句"前缀 + 文字"要剥干净（前缀 + 冒号/空白）',
+        /data\.slice\(MSG_KIND\.length\)\.replace\(\/\^\[:\\s\]\+\/, ''\)/.test(jsSide));
+    ok('★★ 按不可信输入对待：单行化 + 截断 + 防刷（窗口可调）+ 空文字=收掉',
+        /replace\(\/\[\\r\\n\\t\]\+\/g, ' '\)/.test(jsSide) &&
+        /\.slice\(0, MSG_MAX\)/.test(jsSide) &&
+        /if \(t === msgLast\.text && now - msgLast\.at < win\) return;/.test(jsSide) &&
+        /if \(!t\) \{ hideMessage\(\); return; \}/.test(jsSide));
+    ok('★★ 回执用 textContent 写（这一段是外部字符串）；全站唯一的 innerHTML 只属于 README 那一处',
+        /msgEl\.textContent = t;/.test(jsSide) &&
+        (jsSide.match(/innerHTML/g) || []).length === 1 &&
+        /readmeEl\.innerHTML = html;/.test(jsSide));
+    ok('★ 新的一条顶掉旧的（不排队）+ ms=0 可以一直挂着',
+        /if \(msgTimer\) clearTimeout\(msgTimer\);/.test(jsSide) &&
+        /stay = \(typeof ms === 'number' && ms >= 0\) \? ms : MSG_MS/.test(jsSide) &&
+        /stay > 0 \? setTimeout\(hideMessage, stay\) : 0/.test(jsSide));
+    ok('★★ 游戏一停（stopGame）回执就跟着收掉 —— 不留上一局的残影',
+        fnBody(jsSide, 'stopGame').indexOf('hideMessage();') !== -1);
+
+    /* --- ★★ P87：同源时把 iframe 的控制台接到屏幕回执上（不用 jslib 的那条路）--- */
+    ok('★★ P87：iframe 的 console 在 load 时被套一层（同源才做得到，跨源静默跳过）',
+        /hookConsole\(frame\.contentWindow\)/.test(jsSide) &&
+        /function hookConsole\(win\)/.test(jsSide) &&
+        /win\.__playConsoleHooked/.test(jsSide));
+    ok('★★ 只放行 SITE: 前缀的 log（不然 Unity 自己的日志会一行一闪）；error / warn 一律上屏',
+        /const CONSOLE_TAG = 'SITE:';/.test(jsSide) &&
+        /if \(line\.indexOf\(CONSOLE_TAG\) === 0\)/.test(jsSide) &&
+        /wrap\('error', 'ERR', false\)/.test(jsSide) &&
+        /wrap\('warn', 'WARN', false\)/.test(jsSide) &&
+        /wrap\('log', '', true\)/.test(jsSide));
+    ok('★★ 控制台回执要防刷屏：更宽的防重窗口 + 一局里的条数上限（stopGame 归零）',
+        /const MSG_ERR_DEDUPE = 4000;/.test(jsSide) &&
+        /msgErrShown >= MSG_ERR_MAX/.test(jsSide) &&
+        fnBody(jsSide, 'stopGame').indexOf('msgErrShown = 0;') !== -1);
+    ok('★ 套层里出事不许影响游戏本身：原函数照旧被调用（try 包住自己的活）',
+        /return orig\.apply\(win\.console, arguments\);/.test(jsSide) &&
+        /try \{[\s\S]{0,400}?reportConsole/.test(jsSide));
+})();
+
+/* ============================================================
+   2ae. 游戏详细页 = 一页 README（P91）
+   ============================================================ */
+section('[2ae] 游戏详细页 = 一页 README（P91）');
+(function readmeWiring() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+    const jsMd = read('js/markdown.js');
+    const sideCss = cssNC;
+
+    ok('★★ 游乐区里多了一块 .play-readme，而且**排在游戏层之前**（它是普通流里的兄弟，不是盖上去的）',
+        /<div class="play-readme" data-play="readme"><\/div>/.test(html) &&
+        html.indexOf('class="play-readme"') < html.indexOf('class="play-stage"') &&
+        html.indexOf('class="play-spec"') < html.indexOf('class="play-readme"'));
+    ok('★ 可见性靠 class（.play-body.is-readme），**不用 hidden 属性** —— 两者会打架（见 .play-notice 那段）',
+        /\.play-readme\s*\{\s*display:\s*none/.test(sideCss) &&
+        /\.play-body\.is-readme\s+\.play-readme\s*\{[^}]*display:\s*block/.test(sideCss) &&
+        !/class="play-readme"[^>]*hidden/.test(html));
+
+    /* ★★ 字体分工：标题/表头 → 展示字体；正文 → 系统字体。
+       这条也是"只有标题和表头要进字体子集"的依据（见 _dev/glyph-set.js 的 mdChars）。 */
+    ok('★★ 正文用系统字体、标题/表头显式写回展示字体（不写就等于标题也走了系统字体）',
+        /\.play-readme\s*\{[^}]*font-family:\s*system-ui/.test(sideCss) &&
+        /\.play-readme h1,\s*\n\.play-readme h2[\s\S]{0,400}?font-family:\s*"HuXiaoBo"/.test(sideCss) &&
+        /\.play-readme table\.md-table th\s*\{[^}]*font-family:\s*"HuXiaoBo"/.test(sideCss));
+    ok('★★ 字色走 --play-ink（面板在深浅两套主题里都是暗的，不能用会跟着主题翻的 --text）',
+        /--play-ink:\s*#E1E1E1/.test(sideCss) && /color:\s*var\(--play-ink/.test(sideCss));
+
+    ok('★★ 解析器零依赖、纯函数：不碰 DOM、不发请求（只有 escapeHtml / slug / toHtml / safeUrl）',
+        /global\.Markdown = \{/.test(jsMd) &&
+        !/document\.|querySelector|fetch\(/.test(jsMd) &&
+        !/require\(|import /.test(jsMd));
+    ok('★★ 源文本**整体先转义**再解析 → .md 里写内联 HTML 不会被执行（只会原样显示）',
+        /const text = escapeHtml\(String\(src/.test(jsMd));
+    ok('★★ URL 白名单：只放行 http/https/mailto，其余带 scheme 的一律丢掉（javascript: / data: 都拦）',
+        jsMd.indexOf('function safeUrl(raw)') !== -1 &&
+        jsMd.indexOf('/^[a-z][a-z0-9+.\\-]*:/i') !== -1 &&          // 先判"有没有 scheme"
+        jsMd.indexOf('/^(https?|mailto):/i') !== -1 &&            // 有 scheme 的只放行这两个
+        jsMd.indexOf("? s : ''") !== -1);                         // 其余一律丢掉
+
+    ok('★★ 接线：select() 里 loadReadme、resetStage() 里 hideReadme',
+        /renderNotice\(w\);[\s\S]{0,120}?loadReadme\(w\);/.test(jsSide) &&
+        /function resetStage\(\)[\s\S]{0,400}?hideReadme\(\);/.test(jsSide));
+    ok('★★ 取不到就退回 detail（页面不会空）：catch 分支走 readmeFallback',
+        /\.catch\(function \(err\) \{[\s\S]{0,220}?readmeFallback\(w,/.test(jsSide) &&
+        /const items = \(w && w\.detail\) \|\| \[\]/.test(jsSide));
+    ok('★ 按路径缓存 + 到达时比对 token（切了卡带就不许把旧内容盖上来）',
+        /if \(readmeCache\[path\] != null\) \{ renderReadme\(readmeCache\[path\]\); return; \}/.test(jsSide) &&
+        /if \(token !== readmeToken\) return;/.test(jsSide));
+    ok('★ 没写 readme / 没有 Markdown / 没有 fetch → 一律安静地保持原样（不报错、不空页）',
+        /if \(!path\) \{ hideReadme\(\); return; \}/.test(jsSide) &&
+        /typeof Markdown === 'undefined' \|\| typeof fetch !== 'function'/.test(jsSide));
+    ok('★ markdown.js 的 script 排在 sidebar.js 之前（渲染时要用它）',
+        html.indexOf('<script src="js/markdown.js">') !== -1 &&
+        html.indexOf('<script src="js/markdown.js">') < html.indexOf('<script src="js/sidebar.js">'));
+
+    ok('★★ P91b：README 里的 #锚点由站点接管 —— 面板自己滚，不动整页 hash',
+        /readmeEl\.addEventListener\('click'/.test(jsSide) &&
+        /if \(href\.charAt\(0\) !== '#'\) return;/.test(jsSide) &&
+        /readmeEl\.scrollTop \+= \(r\.top - c\.top\) - 10;/.test(jsSide));
+    ok('★ 锚点用 id 逐个比对，**不拼** "#" + id 选择器（数字开头的 id 会让选择器直接抛）',
+        /querySelectorAll\('\[id\]'\)/.test(jsSide) && !/querySelector\('#' \+ /.test(jsSide));
+
+    /* works.js 里的 readme 路径必须**真的存在** —— 写错一个字会静默退回 detail，
+       页面上看不出任何异常 ✗，所以这条由自检来喊 ✓ */
+    const readmePath = (/readme: '([^']+)'/.exec(read('data/works.js')) || [])[1] || '';
+    ok('★ works.js 里 readme 指向的 .md 真的存在：' + (readmePath || '(没写)'),
+        !!readmePath && fs.existsSync(path.join(ROOT, readmePath)));
+})();
+
+/* ============================================================
+   2af. 导航栏上的"游戏控件"：关闭 / 静音 / 全屏（P93）
+   ============================================================ */
+section('[2af] 导航栏上的游戏控件：关闭 / 静音 / 全屏（P93）');
+(function playControls() {
+    const jsSide = codeOnly(read('js/sidebar.js'));
+
+    ok('★★ 导航栏里多了一组 .play-controls（三个键：关闭 / 静音 / 全屏）',
+        /<div class="play-controls" role="group"/.test(html) &&
+        /data-play="ctl-close"/.test(html) && /data-play="ctl-mute"/.test(html) &&
+        /data-play="ctl-full"/.test(html));
+    ok('★ 静音 / 全屏是"开关"：带 aria-pressed，而且**没在玩游戏时 disabled**',
+        /data-play="ctl-mute"[^>]*aria-pressed="false"[^>]*disabled/.test(html) &&
+        /data-play="ctl-full"[^>]*aria-pressed="false"[^>]*disabled/.test(html));
+
+    /* ★★ 这就是"收起的一瞬间还回来"的全部实现：纯 class 驱动，没有 JS 定时器。
+       close() 第一件事就是摘掉 body.sidebar-open → 导航键立刻回来 ✓（不用等滑完）。 */
+    ok('★★ 展开时藏导航按键、显示游戏控件（纯 body.sidebar-open 驱动，瞬时）',
+        /body\.sidebar-open \.logo,\s*\nbody\.sidebar-open \.nav-links,\s*\nbody\.sidebar-open \.theme-toggle\s*\{[^}]*display:\s*none/.test(cssNC) &&
+        /body\.sidebar-open \.play-controls\s*\{[^}]*display:\s*block/.test(cssNC) &&
+        /\.play-controls\s*\{\s*display:\s*none/.test(cssNC));
+    ok('★★ 收起是"一瞬间"：close() 一开头就摘掉 sidebar-open（不靠定时器、不等过渡）',
+        /classList\.remove\(['"]sidebar-open['"]\)/.test(jsSide) &&
+        !/setTimeout\([^)]*sidebar-open/.test(jsSide));
+    ok('★ 开关按键的"按下"态有样式（aria-pressed="true" → 主题红）',
+        /\.play-ctl\[aria-pressed="true"\]\s*\{[^}]*var\(--accent\)/.test(cssNC));
+
+    /* ★★ P93：手机那边导航栏是**顶部横条**（不是 75px 竖轨），所以这一组要横过来排。
+       陷阱：覆盖规则如果只写 `.play-controls { display: flex }`，它和基础那条
+       `display: none` 特异度相同 (0,1,0) 却排在后面 → 关着游乐区也会露出这三个键 ✗。
+       所以只允许两种：基础那条 display:none，或者带 body.sidebar-open 的覆盖 ✓ */
+    const ctlBlocks = cssNC.match(/[^\n{}]*\.play-controls\s*\{[^}]*\}/g) || [];
+    ok('★★ 手机顶栏里这组控件横排，而且覆盖规则挂在 body.sidebar-open 上（关着时不会漏出来）',
+        /body\.sidebar-open \.play-controls\s*\{[^}]*display:\s*flex/.test(cssNC) &&
+        /body\.sidebar-open \.play-ctl\s*\{[^}]*width:\s*auto/.test(cssNC) &&
+        ctlBlocks.length >= 3 &&
+        ctlBlocks.every(function (r) {
+            const t = r.replace(/^\s+/, '');
+            return /display:\s*none/.test(t) || /^body\.sidebar-open/.test(t);
+        }), ctlBlocks.length + ' 条：' + ctlBlocks.join(' | '));
+
+    ok('★★ 三个键都接上了：关闭走 close()、另外两个走自己的开关函数',
+        /ctlClose\.addEventListener\(['"]click['"], function \(\) \{ close\(ctlClose\); \}\)/.test(jsSide) &&
+        /ctlMute\.addEventListener\(['"]click['"], function \(\) \{ toggleMute\(\); \}\)/.test(jsSide) &&
+        /ctlFull\.addEventListener\(['"]click['"], function \(\) \{ toggleFullscreen\(\); \}\)/.test(jsSide));
+    ok('★★ 按钮状态跟着**现实**走：startGame / stopGame 都同步，全屏还能按 Esc 退出',
+        /function syncControls\(\)/.test(jsSide) &&
+        /if \(stageEl\) stageEl\.dataset\.state = ['"]play['"];\s*\n\s*syncControls\(\);/.test(jsSide) &&
+        fnBody(jsSide, 'stopGame').indexOf('syncControls();') !== -1 &&
+        /addEventListener\(['"]fullscreenchange['"], syncControls\)/.test(jsSide));
+
+    /* 静音：同源 → 给 iframe 的 AudioContext 套一层 master gain（最可靠的路），
+       套不上就退回 suspend()/resume()，再顺手静音 <audio>/<video>。 */
+    ok('★★ 静音：在 load 那一刻给 iframe 的 AudioContext 套 master gain（赶在 Unity 建上下文之前）',
+        /try \{ registerAudio\(frame\.contentWindow\); \}/.test(jsSide) &&
+        /const real = ctx\.destination;/.test(jsSide) &&
+        /Object\.defineProperty\(ctx, ['"]destination['"]/.test(jsSide) &&
+        /master\.gain\.value = gameMuted \? 0 : 1;/.test(jsSide));
+    ok('★★ 静音兜底：suspend()/resume() + iframe 里的 <audio>/<video> 也一并静音',
+        /ctx\.suspend\(\) : ctx\.resume\(\)/.test(jsSide) &&
+        /querySelectorAll\(['"]audio,video['"]\)/.test(jsSide));
+    ok('★ 找不到抓手时说老实话（屏幕上给一条提示），不让按钮假装静音了',
+        /hits === 0/.test(jsSide) && /showMessage\(/.test(jsSide));
+    ok('★ 全屏：请求的是 iframe 本身（游戏铺满），退出走 document.exitFullscreen',
+        /frame\.requestFullscreen \|\| frame\.webkitRequestFullscreen/.test(jsSide) &&
+        /doc\.exitFullscreen \|\| doc\.webkitExitFullscreen/.test(jsSide));
 })();
 
 /* ============================================================
@@ -1007,7 +2345,10 @@ section('[2i] 悬停状态不能变陈：滚动时补命中测试（P35）');
         /\.media-panel\.is-hot \.media-panel-title/.test(cssNC) &&
         /\.btn\.primary\.is-hot/.test(cssNC) && /\.btn\.ghost\.is-hot/.test(cssNC) &&
         /\.hero h1\.is-hot/.test(cssNC) && /\.card\.is-hot/.test(cssNC) &&
-        /\.ak-card\.is-hot/.test(cssNC) && /#about \.container\.is-hot/.test(cssNC));
+        /* ★ P62：`.ak-card.is-hot` 不再要求了 —— 那张卡在 index.html 里是注释掉的，
+           它的悬停规则后来被删了。上面那条"不许有 :hover"照样管着它，
+           所以这里少要求一项不会漏掉问题。 */
+        /#about \.container\.is-hot/.test(cssNC));
     ok('media-panel 的悬停样式仍然只在支持 hover 的设备上生效',
         /@media \(hover: hover\) and \(pointer: fine\)[\s\S]{0,700}?\.media-panel\.is-hot/.test(cssNC));
 
@@ -1025,6 +2366,9 @@ section('[2i] 悬停状态不能变陈：滚动时补命中测试（P35）');
             '.win-shot:hover img',
             '.win-track:hover',
             '.win-list-item:hover',
+            '.play-close:hover',             // ★ P63：侧边栏是 fixed chrome，不随页面滚
+            '.play-cart:hover',              // ★ P64：卡带栏同上（也在侧边栏里）
+            '.play-start:hover',             // ★ P81：「开始游戏」同上
         ];
         const seen = [];
         const ruleRe = /([^{}]+)\{/g;
@@ -1284,7 +2628,7 @@ section('[2j] 框选量取：拖框 → 规格进剪贴板（P40）');
        准星"卡在原地"、直到页面静止才突然开始画框。
        现在的做法是标记 refusedDrag（本次按下就此作废）+ 照常往下走。 */
     ok('★★ 拒绝时不许 return（return 会跳过跟随更新 → 准星卡在原地）',
-        /if \(scrolling\) \{\s*\n\s*refusedDrag = true;\s*\n\s*showToast\([\s\S]{0,120}?\} else if \(!guidesOn\(\)\) \{/.test(jsCross) &&
+        /if \(scrolling\) \{\s*\n\s*refusedDrag = true;\s*\n\s*(?:if \(!inPlay\) )?showToast\([\s\S]{0,120}?\} else if \(!guidesOn\(\)\) \{/.test(jsCross) &&
         /* ★ 只看 scrolling 那个分支的**里面**（[^}]* 到右花括号为止）——
            不能用带尾巴的正则往后再扫，那样会撞上后面
            `if (dragging) { … return; }` 那个合法的 return。 */
@@ -1341,9 +2685,11 @@ section('[2j] 框选量取：拖框 → 规格进剪贴板（P40）');
        return 会跳过 targetFromMouse()，准星就卡在原地不动（P46 的老 bug）。
        ★ 回执文案**不钉死**：只要求它点名 G（"按 G…"）。
          你把文案改成"按 G 开启参考系…"了，钉死句子的代价就是每次改词
-         都要回来改自检（P34 的教训）。 */
+         都要回来改自检（P34 的教训）。
+       ★ P75：回执外面套了一层 `if (!inPlay)`（游乐区里不弹），所以这里
+         允许那个可选前缀 —— 钉的是"作废 + 给回执"，不是那一行的字面形状。 */
     ok('★ 没有网格时"作废这次按下 + 给回执"，而不是 return（return 会让准星卡住）',
-        /else if \(!guidesOn\(\)\) \{\s*\n\s*refusedDrag = true;\s*\n\s*showToast\("按 G[^"]*"/.test(jsCross));
+        /else if \(!guidesOn\(\)\) \{\s*\n\s*refusedDrag = true;\s*\n\s*(?:if \(!inPlay\) )?showToast\("按 G[^"]*"/.test(jsCross));
     /* ★ G 键关掉网格时，**已经画出来的框也要收掉** ——
        否则"没有网格就没有框选"会留下一个例外。
        用 rAF 而不是同步读：crosshair.js 和 guides.js 各注册一个 keydown，
@@ -1553,6 +2899,364 @@ section('[2k] 开屏期间四角刻线必须在整页之下（P49）');
 })();
 
 /* ============================================================
+   [2l] 点面板换底图（P50）
+   ------------------------------------------------------------
+   时序：网点 → 全不透明 ⭢ 红遮罩从上往下盖住 ⭢ 换图 + 网点透明
+         ⭢ 红遮罩往下收回 ⭢ 网点镜像回静止渐变。
+
+   ★ 这里**没有浏览器**，所以断的是"这套编排里那些**写错了也不报错**的
+     地方"：换手时两个状态对不对得上、有没有兜底、事件听没听对名字、
+     有没有把 .media-panel 从浮窗那边放行。像素和曲线不在这里验证。
+   ============================================================ */
+section('[2l] 点面板换底图（P50）');
+(function mediaSwap() {
+    const jsSwap = codeOnly(read('js/media-swap.js'));
+    const jsWin = codeOnly(read('js/floating-window.js'));
+
+    /* ---------- 网点那三个值必须是 @property 注册过的 ----------
+       ★★ 没注册的自定义属性是**离散**的：四个关键帧会变成四下硬切，
+         看着像卡顿而不像扫过。这是"写错了也照样跑"的典型。 */
+    ok('★★ 网点的三个自定义属性都注册了 @property（没注册就是离散跳变，不是渐变）',
+        /@property --hl-solid\s*\{[^}]*syntax:\s*"<percentage>"/.test(cssNC) &&
+        /@property --hl-end\s*\{[^}]*syntax:\s*"<percentage>"/.test(cssNC) &&
+        /@property --hl-a\s*\{[^}]*syntax:\s*"<number>"/.test(cssNC));
+    /* ★ inherits: true 不能省：动画挂在 .media-panel-bg（真元素）上，
+       用值的却是它的 ::after。改成 false 的话网点根本读不到动画值。 */
+    ok('★★ 三个属性都 inherits: true（动画在真元素上、用值在 ::after 上）',
+        (cssNC.match(/@property --hl-(solid|end|a)\s*\{[^}]*inherits:\s*true/g) || []).length === 3);
+
+    /* ---------- 静止态必须和改之前**逐像素等价** ---------- */
+    ok('★ 静止态 = 0%/40%/0.8，等于改之前那条两段渐变（实心段宽度 0 等于没有）',
+        /@property --hl-solid\s*\{[^}]*initial-value:\s*0%/.test(cssNC) &&
+        /@property --hl-end\s*\{[^}]*initial-value:\s*40%/.test(cssNC) &&
+        /@property --hl-a\s*\{[^}]*initial-value:\s*0\.8/.test(cssNC));
+    ok('★ 网点渐变是三段结构（实心 → 淡出 → 全透明），停止点全走变量',
+        /\.media-panel-bg::after\s*\{[\s\S]{0,600}?linear-gradient\(\s*\n\s*to bottom,\s*\n\s*rgba\(225, 25, 25, var\(--hl-a/.test(cssNC) &&
+        /var\(--hl-solid/.test(cssNC) && /var\(--hl-end/.test(cssNC));
+
+    /* ---------- 网点：只断言**端点与方向** ----------
+       ★★ P52 改：不再钉中间那两级。
+          中间帧是"编排"（你把它简化成两级了），端点才是"语义"：
+          halftoneToSolid 必须"静止 → 全不透明"，halftoneFromSolid 必须
+          "全不透明 → 静止"。钉中间帧的代价就是每次调编排都要回来改自检
+          （P34 的教训）。下面这两条对"两级"和"四级"两种写法都成立。 */
+    const kf = (name) => (new RegExp('@keyframes ' + name + '\\s*\\{([\\s\\S]*?)\\n\\}').exec(cssNC) || [])[1] || '';
+    /* 静止 = 0% / 40%；全不透明 = 100% / 200%（淡出段整段在盒外） */
+    const REST = '--hl-solid:\\s*0%;[\\s\\S]{0,80}?--hl-end:\\s*40%';
+    const SOLID = '--hl-solid:\\s*100%;[\\s\\S]{0,80}?--hl-end:\\s*200%';
+    ok('★★ ① 网点：静止(0%/40%) → 全不透明(100%/200%)，顺序不能反',
+        new RegExp(REST + '[\\s\\S]{0,300}?' + SOLID).test(kf('halftoneToSolid')));
+    ok('★★ ⑤ 网点：全不透明 → 静止（端点对调 = 反向；顺序错了就成"越收越实"）',
+        new RegExp(SOLID + '[\\s\\S]{0,300}?' + REST).test(kf('halftoneFromSolid')));
+    /* ★ "全不透明"用 100%/200% 表达：淡出区整段推到盒子外面。
+       不用这一手的话就得为那一帧单开一条规则，切换瞬间会跳。 */
+    ok('★ "全不透明"是把淡出区推到盒子外（100% / 200%）+ 顶端 alpha 到 1',
+        new RegExp(SOLID).test(kf('halftoneToSolid')) &&
+        /--hl-a:\s*1;/.test(kf('halftoneToSolid')));
+
+    /* ---------- 红遮罩：软边 + 两次都是"向下" ----------
+       ★★ P52 换了实现：不再是"scaleY 撑开 + 换 transform-origin"，
+          而是"一条比格子高两个羽化量的幕，从上往下滑过去"。
+          原因写在 CSS 里：scaleY 会把渐变一起压扁，软边永远收在元素盒子里 ——
+          那样**罩子底部永远留一截半透明**，而换图正好发生在那一刻。
+          所以断言也跟着换成新机制的三个要点。 */
+    ok('★★ 遮罩比格子高两个羽化量，软边两头都软（P54 起软边走 mask）',
+        /\.media-panel-veil\s*\{[^}]*bottom:\s*calc\(-2 \* var\(--panel-feather\)\)/.test(cssNC) &&
+        /\.media-panel-veil\s*\{[\s\S]{0,1400}?mask-image:\s*linear-gradient\(\s*\n\s*to bottom,\s*\n\s*rgba\(0, 0, 0, 0\) 0,\s*\n\s*#000 var\(--panel-feather\),\s*\n\s*#000 calc\(100% - var\(--panel-feather\)\),\s*\n\s*rgba\(0, 0, 0, 0\) 100%/.test(cssNC));
+
+    /* ============================================================
+       P54：盖满那一刻，红色 → 容器底色（--bg-alt）
+       ------------------------------------------------------------
+       ★★ 让这件事成立的关键改动：遮罩的**背景从四段渐变变成一块纯色**，
+          软边挪到 mask 上。渐变背景是插值不动的（各家支持不齐），
+          而 background-color 的 transition 到处都能跑。
+       ============================================================ */
+    const veilBlk = (cssNC.match(/\.media-panel-veil\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('★★ 遮罩底色是**纯色**（不是渐变）—— 否则变色没法用普通 transition 做',
+        /background-color:\s*var\(--accent\)/.test(veilBlk) &&
+        !/background(-color)?:\s*linear-gradient/.test(veilBlk));
+    /* ★ P55：颜色**不再绕一层自定义属性**。绕一层的话，那条 transition 的
+       插值目标要经过一次变量解析，多一个可能出岔子的环节。 */
+    ok('★ 底色直接写在 background-color 上，不再经过 --panel-veil-tint 中转',
+        !/--panel-veil-tint/.test(cssNC));
+    ok('★★ 变色用 background-color 的 transition（时长 = --panel-tint）',
+        /transition:\s*background-color var\(--panel-tint\)/.test(veilBlk) &&
+        /--panel-tint:\s*\d+ms/.test(cssNC));
+    /* ★★ 盖满那一刻（is-veiled，JS 第 ③ 步和换图同一帧）把颜色换成容器底色。
+       令牌名是 --bg-alt（用户写的 --alt-bg 是反的）。 */
+    ok('★★ is-veiled 把遮罩底色换成容器底色 var(--bg-alt)',
+        /\.media-panel\.is-veiled \.media-panel-veil\s*\{\s*\n\s*background-color:\s*var\(--bg-alt\);/.test(cssNC));
+    /* ★★ P55：收起阶段**再写死一次** + 关键帧里也写 ——
+       三层保险，让"正在收的幕是红的"从结构上不可能发生。 */
+    ok('★★ is-uncovering 也写死底色，关键帧里也写（三层保险）',
+        /\.media-panel\.is-uncovering \.media-panel-veil\s*\{\s*\n\s*background-color:\s*var\(--bg-alt\);/.test(cssNC) &&
+        /@keyframes panelVeilOut\s*\{[\s\S]{0,900}?background-color:\s*var\(--bg-alt\);\s*\n\s*\}\s*\n\s*\n[\s\S]{0,600}?background-color:\s*var\(--bg-alt\);/.test(cssNC));
+    /* ★ 这个颜色得**真的是容器底色**：面板那层夹层用的就是它 ——
+       两处同一个令牌，才不会"变成了另一种灰"。 */
+    ok('★ 变色目标 = 面板夹层用的那个底色（同一个 --bg-alt）',
+        /\.media-panel-bg::before\s*\{[^}]*background:\s*var\(--bg-alt\)/.test(cssNC));
+    /* ★★ 收起要等变色走完：is-uncovering 的 delay = --panel-tint。
+       不等的话就成了"幕一边变色一边往外滑"，看不出"先空掉"这一拍。 */
+    ok('★★ 收起等变色走完（is-uncovering 的 animation-delay = --panel-tint）',
+        /\.media-panel\.is-uncovering \.media-panel-veil\s*\{[^}]*animation-delay:\s*var\(--panel-tint/.test(cssNC));
+    /* ============================================================
+       ★★★ P55：修"变完底色突然闪回红色"
+       ------------------------------------------------------------
+       现象原因：幕变成底色之后往下收，露出来的是**幕后面的东西**；
+       网点那时还停在"全不透明"（实心红），于是幕一动就是一大片实心红，
+       等它慢慢淡回静止渐变，看着又"变回底色"。
+       修法：把网点的返回挪到**幕开始收之前**走完 —— delay = tint − sweep。
+       （这就是那条不变式：delay + sweep ≤ tint。差值可以是负数，
+         负的 animation-delay 合法，表示这段已经跑过一部分了。）
+       ============================================================ */
+    ok('★★★ 网点在"幕开始收"之前就返回完：delay = tint − sweep',
+        /animation-delay:\s*calc\(var\(--panel-tint, 0ms\) - var\(--panel-sweep, 0ms\)\)/.test(cssNC));
+    /* ★★ 而且它的时机必须锚在"盖满"那一刻 —— 不能挂在 `await loaded` 之后，
+       否则图片加载一慢，网点返回就漂到幕已经动起来之后了（红又露出来）。 */
+    ok('★★ is-sweep-out 和 is-veiled 同一帧挂上（不跟图片加载漂）',
+        /classList\.add\('is-veiled'\);\s*\n\s*st\.panel\.classList\.remove\('is-sweep-in'\);\s*\n\s*st\.panel\.classList\.add\('is-sweep-out'\);/.test(jsSwap) &&
+        !/await loaded;[\s\S]{0,200}?classList\.add\('is-sweep-out'\)/.test(jsSwap));
+    ok('★ tint 也是从 CSS 读出来的（JS 里没有第二份变色时长）',
+        /const TINT = timeOf\('--panel-tint'\)/.test(jsSwap));
+
+    /* ============================================================
+       P55：换图之后新图"由大缩小"
+       ============================================================ */
+    ok('★★ 新图由大缩小：动画挂在 <img> 上，从大 scale 收到 1',
+        /\.media-panel\.is-uncovering \.media-panel-bg img\s*\{\s*\n\s*animation:\s*panelImgZoom var\(--panel-zoom\)/.test(cssNC) &&
+        /@keyframes panelImgZoom\s*\{\s*\n\s*from\s*\{\s*\n\s*transform:\s*scale\(var\(--panel-zoom-from/.test(cssNC) &&
+        /@keyframes panelImgZoom[\s\S]{0,200}?to\s*\{\s*\n\s*transform:\s*scale\(1\);/.test(cssNC));
+    /* ★★ 必须挂在 <img> 上，不能挂在 `.media-panel-bg` 上 ——
+       bg 那一层已经被网点动画占着（同一个元素只能有一份 animation 声明，
+       谁后写谁把另一条顶掉，网点动画会被静默干掉）。 */
+    ok('★★ 挂 img 不挂 bg（bg 的 animation 槽被网点动画占着，会互相顶掉）',
+        /\.media-panel\.is-uncovering \.media-panel-bg img/.test(cssNC) &&
+        !/\.media-panel\.is-uncovering \.media-panel-bg\s*\{[^}]*animation:/.test(cssNC));
+    /* ★ 手感和鼠标悬停那一套一致：同一条曲线、同样的起点距离（1.06）。 */
+    ok('★ 曲线与起点照搬悬停那套（cubic-bezier(0.2,0.9,0.3,1)、1.06 → 1）',
+        /panelImgZoom var\(--panel-zoom\) cubic-bezier\(0\.2, 0\.9, 0\.3, 1\)/.test(cssNC) &&
+        /\.media-panel-bg\s*\{[^}]*transition:[^;]*transform 0\.8s cubic-bezier\(0\.2, 0\.9, 0\.3, 1\)/.test(cssNC) &&
+        /--panel-zoom:\s*\d+ms/.test(cssNC) && /--panel-zoom-from:\s*1\.06/.test(cssNC));
+    /* ★★ 收尾要**一起等缩放**：`--panel-zoom` 万一被调得比 --panel-cover 还长，
+       不等它就会在动画中途摘类（图啪地跳到终态）。 */
+    ok('★★ 收尾把缩放也等进去（调长也不会被掐）',
+        /whenAnimated\(st\.img, 'panelImgZoom', TINT \+ ZOOM \+ SLACK\)/.test(jsSwap) &&
+        /const ZOOM = timeOf\('--panel-zoom'\)/.test(jsSwap));
+    /* ★★ 缩放和"幕收起"共用一个延迟（--panel-tint）：两边天然同步，
+       不管图片加载拖多久都是"幕一动、图就跟着缩"。 */
+    ok('★★ 缩放和幕收起共用延迟 --panel-tint（加载再慢也不会错位）',
+        /animation:\s*panelImgZoom[^;]*var\(--panel-tint, 0ms\)\s*both;/.test(cssNC) &&
+        /\.media-panel\.is-uncovering \.media-panel-veil\s*\{[^}]*animation-delay:\s*var\(--panel-tint/.test(cssNC));
+    /* ★ `both` 不能省：延迟那一段要先把图定在"大"的起态上，
+       否则幕还没动、图先以 1 露出来一瞬再跳大。 */
+    ok('★ 缩放用 fill-mode: both（延迟期间就定在"大"的起态）',
+        /panelImgZoom[^;]*var\(--panel-tint, 0ms\)\s*both;/.test(cssNC));
+    /* ★★ 展开停在 -羽化量（不是 0）：罩子高 H+2F、实心段在局部 [F, H+F]，
+       整体上移 F 之后实心段正好是 [0, H] —— 整格铺满，两条软边都在格子外。
+       这条是"完全盖住"的算术前提，错了就会出现"底部一截是淡的、换图被看见"。 */
+    ok('★★ 展开停在 -羽化量：实心段正好铺满 [0,100%]，软边全在格子外',
+        /@keyframes panelVeilIn\s*\{\s*\n\s*from\s*\{\s*\n\s*transform:\s*translateY\(-100%\);\s*\n\s*\}\s*\n\s*\n\s*to\s*\{\s*\n\s*transform:\s*translateY\(calc\(-1 \* var\(--panel-feather\)\)\);/.test(cssNC));
+    /* ★ 收起 = 接着往下滑出去：红色从上边开始消失、一路退到底。
+       这也是"从上端 0% 向下 100% 逐渐收起"最直白的写法（不用再换 origin）。
+       ★★ 终点必须是"刚好滑到格子下面"那一格（100% − 2×羽化量），
+          不能是 100%：后者最后 2F 那一段屏幕上是空的（340ms 里约 60ms），
+          红早走完了、动画还在空跑，而 JS 正等在这个 animationend 上 ——
+          表现成"红没了"和"网点开始回来"之间多一小段空白。 */
+    /* ★ 用 kf() 只看关键帧本体，**不跨注释**去数长度。
+       ★★ 踩过的坑：这个文件里的 cssNC 是把注释换成"等长的空格串"
+          （`' '.repeat(m.length)`，见文件开头），不是换成一个空格 ——
+          所以任何跨注释的 `[\s\S]{0,n}` 都得留足余量，我原来写 {0,300}
+          就正好卡在两条注释之间，断言假红。 */
+    ok('★ 收起滑到"刚好出格"就停（100% − 2×羽化量），不留空跑的一段',
+        /to\s*\{\s*\n\s*transform:\s*translateY\(calc\(100% - 2 \* var\(--panel-feather\)\)\);/.test(kf('panelVeilOut')) &&
+        !/translateY\(100%\)/.test(kf('panelVeilOut')));
+    /* ★ 两段行程一样长（都是 H + F）→ 同一个时长下展开和收起速度一致。 */
+    ok('★ 展开与收起行程等长（-100%→-F 与 -F→100%-2F）',
+        /to\s*\{\s*\n\s*transform:\s*translateY\(calc\(-1 \* var\(--panel-feather\)\)\);/.test(kf('panelVeilIn')) &&
+        /from\s*\{\s*\n\s*transform:\s*translateY\(calc\(-1 \* var\(--panel-feather\)\)\);/.test(kf('panelVeilOut')));
+    ok('★ 动画只动 transform（合成器；不重排不重画）',
+        /\.media-panel-veil\s*\{[^}]*will-change:\s*transform/.test(cssNC) &&
+        !/@keyframes panelVeil(In|Out)[\s\S]{0,200}?(width|height|top|bottom):/.test(cssNC));
+    /* ★ P52/P53：羽化量只要是**绝对长度**就行（px / vh / rem…），
+       唯一不能用的是 % —— 它在 translateY 和 height / 渐变里是两套参照系。
+       （你把它从 90px 调成了 180vh；这条断言跟着放宽，但"不许是 %"留着。） */
+    ok('★ 羽化量是绝对长度（px/vh/…），不是 %（% 在三处是两套参照系）',
+        /--panel-feather:\s*[\d.]+(px|vh|vw|vmin|vmax|rem|em);/.test(cssNC) &&
+        !/--panel-feather:\s*[\d.]+%/.test(cssNC));
+    /* ★ 首尾用 rgba(同色, 0) 而不是 transparent：后者是 rgba(0,0,0,0)，
+       和 --accent 插值有的引擎会中间发灰。 */
+    ok('★ 软边两端用 rgba(225,25,25,0)，不用 transparent（避免插出灰色）',
+        !/\.media-panel-veil\s*\{[\s\S]{0,700}?linear-gradient\([\s\S]{0,300}?transparent/.test(cssNC));
+    ok('★ 遮罩盖得住整格（z-index 在文字 1 之上）而且是 JS 注入的',
+        /\.media-panel-veil\s*\{[^}]*z-index:\s*2/.test(cssNC) &&
+        /createElement\('div'\)[\s\S]{0,120}?className = 'media-panel-veil'/.test(jsSwap));
+    /* ★★ 遮罩不能吃鼠标：准星靠 elementFromPoint 做命中测试，
+       一层吃鼠标的遮罩会把 .media-panel 的悬停态整段掐掉。 */
+    ok('★★ 遮罩 pointer-events: none（否则准星的命中测试会被它挡住）',
+        /\.media-panel-veil\s*\{[^}]*pointer-events:\s*none/.test(cssNC));
+
+    /* ---------- ③ 遮罩盖住那一刻：网点保持可见 + 换图 ----------
+       ★★ P52：这一条你把它从 `opacity: 0` 改成了 1，是对的，断言跟着改。
+          遮罩盖住那一段网点本来就看不见（被红幕压着），所以两种写法在
+          "盖住"期间没区别；区别在**收起那一段**：
+            用 0 → 面板重新露出来时是"光板一块"，第 ⑤ 步才啪地冒出网点；
+            用 1 → 露出来的就是"红网点 + 新图"，然后再渐变回 0%~40%，
+                   正好接上第 ⑤ 步（你 P50 要的"从完全不透明渐变回"）。
+          所以这里断言的是**不变量**："遮罩期间不许把网点藏起来"。 */
+    ok('★★ 遮罩期间不把网点藏起来（收起时露出来的才是"红网点 + 新图"）',
+        !/\.media-panel\.is-veiled \.media-panel-bg::after\s*\{[^}]*opacity:\s*0/.test(cssNC));
+    /* ★★ 换图必须**在**遮罩盖住之后、收起之前 —— 顺序反了就是"当着用户的面换图"。
+       （P55 之后第 ③ 步里还夹着网点的换手，所以中间允许有它。） */
+    ok('★★ ③ 换图夹在"盖住"与"收起"之间',
+        /is-veiled'\);[\s\S]{0,300}?await loaded;\s*\n\s*applyNext\(st\);[\s\S]{0,300}?classList\.remove\('is-covering'\)/.test(jsSwap));
+
+    /* ---------- 链子：听名字、有兜底、绝不卡死 ---------- */
+    /* ★★ 同一个元素上先后跑两条不同的动画（网点进 / 网点出），
+       只听元素不听名字会走错步。 */
+    ok('★★ 等动画时连 animationName 一起判（同元素上先后有两条不同动画）',
+        /function whenAnimated\(el, name, limit\)/.test(jsSwap) &&
+        /if \(name && e\.animationName !== name\) return;/.test(jsSwap));
+    /* ★★ 每一步都有兜底超时：事件不来也必须往下走 ——
+       最坏是"动画没看见"，绝不能是"面板被一块红遮罩永久盖住"。 */
+    ok('★★ 每一个"等"都有兜底超时（事件不来也不能把面板盖死）',
+        /timer = setTimeout\(finish, limit\)/.test(jsSwap) &&
+        /whenAnimated\([\s\S]{0,90}?\+ SLACK\)/.test(jsSwap) &&
+        (jsSwap.match(/\+ SLACK\)/g) || []).length >= 3);
+    /* ★★★ 真机上那个 bug 的碑：`finish()` 里引用定时器时，
+       定时器必须**先声明并初始化**（`let timer = null`）。
+       原来是 `const timer = setTimeout(...)` 写在后面，而缓存命中的图会
+       **同步**调用 finish() —— 那一刻 const 还在 TDZ 里，直接
+       ReferenceError → Promise 变 rejected → await 抛出 → finally 摘掉所有类。
+       表现："红遮罩刚盖满就瞬间消失、后面什么都不发生"，而且控制台一片安静。 */
+    ok('★★★ 定时器先 `let … = null` 再进闭包（TDZ 会同步炸，而且炸得没声音）',
+        /let timer = null;/.test(jsSwap) &&
+        /if \(timer !== null\) clearTimeout\(timer\)/.test(jsSwap) &&
+        !/const timer = setTimeout\(finish, limit\)/.test(jsSwap));
+    /* ★★ 出错要有声音：async 函数会把异常吞成 rejected promise，
+       只剩 finally 在那儿默默复位 —— 页面看起来"动画坏了"，查不到原因。 */
+    ok('★★ 链子出错时留一行 warn（否则 async 会把异常吞掉、静默坏掉）',
+        /catch \(err\) \{[\s\S]{0,500}?console\.warn\('media-swap/.test(jsSwap));
+    ok('★★ finally 里把六个类全摘掉（无论怎么出去都不留死画面）',
+        /finally \{[\s\S]{0,400}?'is-swap', 'is-sweep-in', 'is-sweep-out',[\s\S]{0,120}?'is-covering', 'is-uncovering', 'is-veiled'\)/.test(jsSwap));
+    /* ★★ 预载必须有超时 + onerror：图 404 时链子正停在"遮罩盖着"那一步，
+       没有兜底就是把面板永久盖住。 */
+    ok('★★ 预载有超时和 onerror（图 404 时不能把面板卡在遮罩后面）',
+        /im\.onerror = finish/.test(jsSwap) &&
+        /function preload\(src, limit\)/.test(jsSwap) &&
+        /timer = setTimeout\(finish, limit\)/.test(jsSwap) &&
+        /* ★ 缓存命中这条快路径必须显式写出来：真机第一次换图走的就是它 */
+        /if \(im\.complete\) \{ finish\(\); return; \}/.test(jsSwap));
+
+    /* ---------- P53：两半都是"错开着并行" ---------- */
+    /* ★★ 起跑是并行的：点一下同时挂上 is-sweep-in 和 is-covering，
+       而**不再**先 await 网点的 animationend 再挂遮罩 ——
+       串行的写法会让"网点跑完"变成遮罩起跑的前提，两层就永远叠不起来。 */
+    ok('★★ 两层并行起跑（同一个 try 里连挂两个类，中间不许 await）',
+        /classList\.add\('is-sweep-in'\);\s*\n\s*st\.panel\.classList\.add\('is-covering'\);/.test(jsSwap) &&
+        !/await whenAnimated\(bg, 'halftoneToSolid'/.test(jsSwap));
+    /* ★★ 错开量必须是 CSS 的 animation-delay（两处都用 --panel-lag）。
+       用 JS 定时器的话，降低动效把 animation-duration 压到 .01ms 之后就错位了。 */
+    ok('★★ ①→② 的错开在 CSS 上：遮罩的 animation-delay = --panel-lag',
+        /\.media-panel\.is-covering \.media-panel-veil\s*\{[^}]*animation-delay:\s*var\(--panel-lag/.test(cssNC));
+    ok('★★ ④→⑤ 的错开也在 CSS 上：网点 delay = tint + lag',
+        /\.media-panel\.is-sweep-out \.media-panel-bg\s*\{[^}]*animation-delay:\s*calc\(var\(--panel-tint/.test(cssNC));
+    /* ★★ delay 写成独立的 longhand + 0ms 兜底：`var()` 取不到值会让整条
+       animation 声明"计算值非法"而退成 none（动画根本不跑，只剩兜底超时）；
+       拆成 animation-delay 最坏也只是"不延迟"。 */
+    ok('★★ delay 是独立 longhand 且带 0ms 兜底（var() 失效时不至于把整条动画废掉）',
+        /animation-delay:\s*var\(--panel-lag, 0ms\);/.test(cssNC) &&
+        !/animation:[^;]*var\(--panel-lag/.test(cssNC));
+    /* ★★ 最后要**一起等**：遮罩收起（cover）和网点收回（sweep+lag）是并行跑的，
+       只等其中一个就会在另一个还没跑完时把类全摘掉（动画当场被掐）。 */
+    ok('★★ 收尾等两段都跑完（Promise.all：遮罩收起 + 网点收回）',
+        /Promise\.all\(\[[\s\S]{0,300}?whenAnimated\(st\.veil, 'panelVeilOut'[\s\S]{0,200}?whenAnimated\(bg, 'halftoneFromSolid'/.test(jsSwap));
+    /* ★ 兜底超时也要跟着改：
+         幕收起 = tint + cover；网点返回 = max(sweep, tint)（delay 可能是负的，
+         所以它的**结束**时刻是 max(sweep, tint) 而不是两者相加）。 */
+    ok('★ 兜底超时和新的延迟一致（tint+cover / max(sweep,tint)）',
+        /whenAnimated\(st\.veil, 'panelVeilIn', COVER \+ LAG \+ SLACK\)/.test(jsSwap) &&
+        /whenAnimated\(st\.veil, 'panelVeilOut', TINT \+ COVER \+ SLACK\)/.test(jsSwap) &&
+        /whenAnimated\(bg, 'halftoneFromSolid', Math\.max\(SWEEP, TINT\) \+ SLACK\)/.test(jsSwap));
+    /* ★ lag 也必须是"读出来"的，不能在 JS 里再写一个 200。 */
+    ok('★ lag 也是从 CSS 读出来的（JS 里没有第二份错开量）',
+        /const LAG = timeOf\('--panel-lag'\)/.test(jsSwap) && /--panel-lag:\s*\d+ms/.test(cssNC));
+
+    /* ---------- 换手时状态必须接得上 ---------- */
+    /* ★★ 每个类都带 forwards 填充，中途摘掉就会当着用户的面弹回起点；
+       而 P53 之后 is-sweep-out 前面还有一段 delay ——
+       那期间显示的正是它自己的基础声明（100%/200%/1 = 全不透明），
+       所以"遮罩已经开始收、网点还停在实心"这段接缝是看不见的。 */
+    ok('★★ sweep-in → sweep-out 同帧换手（不摘早，也不两段动画打架）',
+        /classList\.remove\('is-sweep-in'\);\s*\n\s*st\.panel\.classList\.add\('is-sweep-out'\);/.test(jsSwap) &&
+        !/classList\.remove\('is-sweep-out'\);\s*\n\s*st\.panel\.classList\.add\('is-sweep-in'\)/.test(jsSwap));
+    ok('★ is-sweep-out 把"起态"写成基础声明（万一样式先算一次、动画还没起跑也不闪）',
+        /\.media-panel\.is-sweep-out \.media-panel-bg\s*\{\s*\n\s*--hl-solid:\s*100%;\s*\n\s*--hl-end:\s*200%;\s*\n\s*--hl-a:\s*1;/.test(cssNC));
+    ok('★ is-uncovering 也写了起态兜底（写成"已盖满"的位置，不是基础值）',
+        /\.media-panel\.is-uncovering \.media-panel-veil\s*\{[^}]*transform:\s*translateY\(calc\(-1 \* var\(--panel-feather\)\)\)/.test(cssNC));
+
+    /* ---------- 时长只有一份 ---------- */
+    ok('★★ 时长写在 CSS 里、JS 读出来用（JS 里不出现第二份毫秒数）',
+        /--panel-sweep:\s*\d+ms/.test(cssNC) && /--panel-cover:\s*\d+ms/.test(cssNC) &&
+        /getPropertyValue\(name\)/.test(jsSwap) &&
+        /const SWEEP = timeOf\('--panel-sweep'\)/.test(jsSwap) &&
+        /* ★★ 第一版这里写的是 `timeOf(…, '--panel-sweep', 420)` —— 一个"看着稳妥"
+           的兜底数字，其实就是把同一份时长抄了两遍。所以这条断言连兜底数字一起禁掉。 */
+        !/timeOf\([^)]*,\s*\d/.test(jsSwap));
+    /* ★ 读不到时长就别编排：直接换图，而不是拿一个猜的数字硬跑五步。 */
+    ok('★ 时长读不到就不做动画（连时间都不知道，不该硬跑）',
+        /const CAN_ANIMATE = SWEEP > 0 && COVER > 0;/.test(jsSwap) &&
+        /if \(REDUCE\.matches \|\| !CAN_ANIMATE\) \{/.test(jsSwap));
+
+    /* ---------- 图片来源 ---------- */
+    ok('★ 图片列表读 data/works.js：gallery 用 shots[].src，其它用 cover',
+        /if \(w\.kind === 'gallery' && Array\.isArray\(w\.shots\)/.test(jsSwap) &&
+        /return w\.cover \? \[w\.cover\] : \[\]/.test(jsSwap) &&
+        /window\.WORKS/.test(jsSwap));
+    /* ★ 脚本必须排在 data/works.js 之后，否则读不到数据（而且是静默退化）。 */
+    ok('★ media-swap.js 排在 data/works.js 之后',
+        html.indexOf('src="js/media-swap.js"') > html.indexOf('src="data/works.js"') &&
+        html.indexOf('src="js/media-swap.js"') > 0);
+
+    /* ---------- 触发 ---------- */
+    /* ★★ 用冒泡阶段，不用捕获：crosshair.js 那两个捕获阶段的 click 会
+       stopPropagation（框选确认 / 吞掉拖框松手那一下），
+       于是"正在量取时点一下面板"不会顺手把底图也换掉。 */
+    ok('★★ 面板的点击走**冒泡**（capture 那条链上 crosshair 会吃掉量取时的点击）',
+        /document\.addEventListener\('click', function \(e\) \{[\s\S]{0,400}?closest\('\.media-panel'\)/.test(jsSwap) &&
+        !/addEventListener\('click', function \(e\) \{[\s\S]{0,400}?closest\('\.media-panel'\)[\s\S]{0,200}?\}, true\)/.test(jsSwap));
+    ok('★ 键盘等价（面板是 role=button，回车 / 空格要能换）',
+        /e\.key !== 'Enter' && e\.key !== ' '/.test(jsSwap) &&
+        /* ★ preventDefault 不能省：空格默认会滚页面。
+           这条断言只能看**代码**（codeOnly 把注释摘了）——
+           "空格默认会滚页面"那句理由写在注释里，抓不到也不该抓。 */
+        /e\.preventDefault\(\);\s*\n\s*swap\(stateOfPanel\(panel\)\);/.test(jsSwap));
+    ok('★ 正在换的时候忽略后续点击（否则两次点击会打架）',
+        /classList\.contains\('is-swap'\)\) return;/.test(jsSwap));
+    /* ★★ 换图期间必须强制露出底图：.media-panel-bg 平时 opacity: 0，
+       只在 .is-hot 时可见，而那条规则还包在 @media (hover…) 里 ——
+       触屏点一下没有 hover，动画会在全透明的一层上演。 */
+    ok('★★ 换图期间强制露出底图（触屏没有 hover，否则动画演在透明层上）',
+        /\.media-panel\.is-swap \.media-panel-bg\s*\{[^}]*opacity:\s*1/.test(cssNC));
+
+    /* ---------- 降低动效 ---------- */
+    ok('★★ 降低动效下直接换图、不演这套扫除（也不留 0.01ms 的闪红）',
+        /REDUCE\.matches[\s\S]{0,40}?\{\s*\n\s*applyNext\(st\);\s*\n\s*return;/.test(jsSwap) &&
+        /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/.test(jsSwap));
+
+    /* ---------- 和浮窗的关系 ---------- */
+    ok('★★ 面板不再开浮窗（两个入口必须互斥，否则一次点击触发两件事）',
+        /!el\.classList\.contains\('media-panel'\)/.test(jsWin) &&
+        /const opensWindow = \(el\) =>/.test(jsWin));
+    ok('★ .card 那条入口还在（放行条件只针对面板这一类）',
+        /closest\('\[data-work\]'\)/.test(jsWin) &&
+        /if \(!opensWindow\(el\)\) return;/.test(jsWin));
+    /* ★★ 面板的 aria-label 得跟着改：它已经不是"打开"了。 */
+    ok('★★ 面板的 aria-label 改成"切换底图"（它不再打开任何东西）',
+        !/aria-label="打开：/.test(html) &&
+        (html.match(/aria-label="切换底图：/g) || []).length === 4);
+})();
+
+/* ============================================================
    3. 浮窗状态机（极简 DOM 桩）
    ============================================================ */
 section('[3] 浮窗状态机');
@@ -1568,6 +3272,26 @@ class ClassList {
 
 function matchSel(el, sel) {
     sel = sel.trim();
+    /* ★★ P50：后代选择器（`.media-panel-bg img` 这种）必须**最先**判。
+       第一版我把它放在函数末尾，而 `.media-panel-bg img` 是以 `.` 开头的，
+       于是被上面那条"类选择器"分支直接 return false 掉了 —— 永远走不到。
+       （表现：media-swap.js 在桩里找不到 <img>，整个模块静默地"没图可换"。）
+       实现：最后一段匹配自己，前面每一段从祖先里从右往左找。 */
+    if (/\s/.test(sel)) {
+        const parts = sel.split(/\s+/);
+        let node = el;
+        for (let i = parts.length - 1; i >= 0; i--) {
+            let found = null;
+            while (node) {
+                if (matchSel(node, parts[i])) { found = node; break; }
+                node = node.parentElement;
+            }
+            if (!found) return false;
+            node = found.parentElement;
+        }
+        return true;
+    }
+    if (sel === '*') return true;
     if (sel.startsWith('#')) return el.attrs.id === sel.slice(1);
     if (sel.startsWith('.')) return (el.className || '').split(/\s+/).includes(sel.slice(1));
     if (sel.startsWith('[')) {
@@ -1607,7 +3331,11 @@ class El {
     getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; }
     removeAttribute(k) { delete this.attrs[k]; }
     append(...nodes) { nodes.forEach(n => { if (!n) return; n.parentElement = this; n.isConnected = true; this.childNodes.push(n); }); }
-    replaceChildren(...nodes) { this.childNodes.forEach(n => { n.parentElement = null; n.isConnected = false; }); this.childNodes = []; this.append(...nodes); }
+    /* ★ P50：真 DOM 里的 appendChild 也要有 —— media-swap.js 用它挂遮罩
+       （和 draft-layer.js 一个写法）。桩里缺它就报 TypeError，
+       整节测试会在模块初始化那一步直接炸掉。 */
+    appendChild(n) { this.append(n); return n; }
+    replaceChildren(...nodes) { this.childNodes.forEach(n => { n.parentElement = null; n.isConnected = false; }); this.childNodes = []; this.innerHTML = ''; this.append(...nodes); }
     addEventListener(t, f) { (this._ev[t] || (this._ev[t] = [])).push(f); }
     removeEventListener(t, f) { if (this._ev[t]) this._ev[t] = this._ev[t].filter(x => x !== f); }
     fire(t, e) {
@@ -1618,9 +3346,31 @@ class El {
         return e;
     }
     closest(sel) { let n = this; while (n && n.nodeType === 1) { if (matchSel(n, sel)) return n; n = n.parentElement; } return null; }
+    /* ★ P93：sidebar.js 的 stopGame() 要判断"正全屏的是不是自己这一局"
+       （document.fullscreenElement 是不是舞台里的东西）→ 真 DOM 的 contains ✓ */
+    contains(n) { let x = n; while (x) { if (x === this) return true; x = x.parentElement; } return false; }
     querySelectorAll(sel) { const out = []; const walk = n => n.childNodes.forEach(c => { if (c.nodeType === 1) { if (matchSel(c, sel)) out.push(c); walk(c); } }); walk(this); return out; }
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
     showModal() { if (this.open) throw new Error('dialog already open'); this.open = true; }
+    /* ★ P64：桩里原本没有 focus()。js/sidebar.js 要"焦点进游乐区 / 关时还给
+       按钮"，没这个方法会直接 TypeError、整节在初始化那一步炸掉。
+       顺手把"谁拿到了焦点"记在 doc._focus 上，断言就有东西可查了。 */
+    focus() { doc._focus = this; }
+    /* ★ P75：桩里也没有 remove() —— 卡带悬停那条"跟随鼠标的回执"是临时节点，
+       鼠标离开时要自己摘掉。注意 doc.querySelectorAll 走的是 _els（摘了也还在），
+       所以断言要用 doc.body.querySelectorAll（走 childNodes）。 */
+    remove() {
+        const p = this.parentElement;
+        if (p) p.childNodes = p.childNodes.filter((n) => n !== this);
+        this.parentElement = null;
+        this.isConnected = false;
+    }
+    /* ★ P77：桩里给一个**假的**矩形。悬停回执那条要验"鼠标点一下不许被重建成
+       键盘那份（摆在卡带右上角）"—— 没有这个方法就复现不出那个 bug
+       （focus 分支里 `r` 会是 null，什么都不做，测试就白绿了）。 */
+    getBoundingClientRect() {
+        return { left: 0, top: 0, right: 40, bottom: 120, width: 40, height: 120 };
+    }
     close() { if (!this.open) return; this.open = false; this.fire('close'); }
 }
 
@@ -1632,6 +3382,8 @@ const doc = {
     querySelector(s) { return doc._els.find(e => matchSel(e, s)) || null; },
     querySelectorAll(s) { return doc._els.filter(e => matchSel(e, s)); },
     addEventListener(t, f) { (doc._ev[t] || (doc._ev[t] = [])).push(f); },
+    /* ★ P93：真 Document 也有 removeEventListener（临时侦听用完要摘掉） */
+    removeEventListener(t, f) { if (doc._ev[t]) doc._ev[t] = doc._ev[t].filter(x => x !== f); },
     dispatchEvent(e) { (doc._ev[e.type] || []).forEach(f => f(e)); return true; },
 };
 doc.body = new El('body');
@@ -1642,6 +3394,10 @@ global.Element = El;
 global.CustomEvent = class { constructor(t) { this.type = t; } };
 global.document = doc;
 global.window = global;
+/* ★ P82：桩里 window 就是 global，但 global 上没有 addEventListener ——
+   sidebar.js 现在会监听游戏发来的"我退出了"（window 的 message）。
+   补一个，转发到 doc 那套事件表，测试就能 dispatchEvent 一条 message 进来。 */
+global.addEventListener = (t, f) => { (doc._ev[t] || (doc._ev[t] = [])).push(f); };
 global.requestAnimationFrame = fn => setTimeout(fn, 0);
 global.cancelAnimationFrame = id => clearTimeout(id);
 global.matchMedia = q => ({ media: q, matches: false, addEventListener() {}, removeEventListener() {} });
@@ -1682,7 +3438,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('is-in 已加（兜底路径走 raf2）', dialog.classList.contains('is-in'));
     ok('标题 / 编号正确', titleEl.textContent === '绘画' && noEl.textContent === '03', titleEl.textContent + '/' + noEl.textContent);
     ok('body[data-kind=gallery]', bodyEl.dataset.kind === 'gallery');
-    ok('渲染出图片', bodyEl.querySelectorAll('.win-shot').length === 1);
+    /* ★ 数一数就行，**别钉死 1** —— 作品数据里 shots 迟早会不止一张
+       （P56 时 art-draw 已经有 2 张了，钉死数字的代价就是每次加图都要回来改自检）。 */
+    ok('渲染出图片', bodyEl.querySelectorAll('.win-shot').length >= 1,
+        String(bodyEl.querySelectorAll('.win-shot').length) + ' 张');
     ok('占位角标可见', badge.hidden === false);
     ok('非 unity 时外链按钮隐藏', ext.hidden === true);
     ok('World.pause 被调用', paused === 1, 'paused=' + paused);
@@ -1759,6 +3518,1144 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok('reduced 下能打开', dialog.open === true && dialog.classList.contains('is-in'));
     WR.close();
     ok('reduced 下关闭是即时的（不等 240ms）', dialog.open === false && bodyEl.childNodes.length === 0);
+
+    /* ============================================================
+       [4] 点面板换底图：**真的跑一遍时序**（P50）
+       ------------------------------------------------------------
+       ★★ 这一节和上面 [2l] 那节的分工要说清楚：
+          [2l] 检查"代码里写没写对"（grep 级别）；
+          这里把模块**真的跑起来**，用极简 DOM 桩一步步 fire
+          animationend，检查每一步的类状态、图片 src、收尾是否干净。
+          "事件没来会不会把面板永久盖死""名字不对的 animationend 会不会
+          走错步"这类问题，只有跑起来才看得见。
+       ============================================================ */
+    section('[4] 点面板换底图：跑一遍时序（P50）');
+
+    /* 一个能被测试翻转的 reduce 开关。
+       ★ 用 getter 而不是固定值：模块在**点击那一刻**读 .matches，
+         于是不用把模块 eval 两遍（eval 两遍会注册两个点击监听，
+         一次点击被处理两次，测出来的东西就不算数了）。 */
+    let reduceNow = false;
+    global.matchMedia = q => ({
+        media: q,
+        get matches() { return reduceNow && /reduced-motion/.test(q); },
+        addEventListener() {}, removeEventListener() {},
+    });
+    /* 时长令牌：模块会 getComputedStyle 读它们。
+       ★ 四个都要给全（含 P53 的 --panel-lag）—— 少给一个，模块读成 0，
+         测出来的编排就不是真机上那一套了。 */
+    global.getComputedStyle = () => ({
+        getPropertyValue: n => ({
+            '--panel-sweep': '420ms',
+            '--panel-cover': '340ms',
+            '--panel-lag': '200ms',
+            '--panel-tint': '200ms',
+            '--panel-zoom': '600ms',
+        }[n] || ''),
+    });
+    /* 预载：同步完成，测试不等网
+       ★★ P50 修：这里必须模拟"图已经在缓存里"。
+          真机上第一次换图时 `_test.jpg` 早就显示在面板上了 ——
+          `new Image(); im.src = 同一个 URL` 之后 `im.complete` **立刻**为 true。
+          原来的桩没有 complete（undefined），这条路径根本测不到，
+          于是真机上炸、自检全绿。 */
+    global.Image = class {
+        constructor() { this.complete = false; }
+        set src(v) {
+            this._src = v;
+            this.complete = true;                       /* 缓存命中：同步就绪 */
+            global.Image.__cached = (global.Image.__cached || 0) + 1;
+            if (this.onload) setTimeout(() => this.onload(), 0);   /* load 事件仍是异步的 */
+        }
+        get src() { return this._src; }
+    };
+
+    /* 面板桩：.media-panel[data-work] > .media-panel-bg > img */
+    const mkPanel = (id, src) => {
+        const p = doc.createElement('article');
+        p.className = 'media-panel';
+        p.setAttribute('data-work', id);
+        const bg = doc.createElement('div');
+        bg.className = 'media-panel-bg';
+        const im = doc.createElement('img');
+        im.setAttribute('src', src);
+        bg.append(im);
+        p.append(bg);
+        doc.body.append(p);
+        return { panel: p, bg: bg, img: im };
+    };
+    /* gallery 面板补一张图 —— 否则"换没换"根本看不出来。
+       ★★ 期望值要**算出来**，不能写死：作品数据里的 shots 会变
+          （P56 时 art-draw 已经有 2 张真图了）。所以下面断言"换成了列表里的下一张"，
+          不写死某个文件名。 */
+    const galleryWork = (window.WORKS || []).filter(w => w.id === 'art-draw')[0];
+    galleryWork.shots.push({ src: 'assets/images/_second.jpg', caption: '第二张（测试用）' });
+    const srcList = galleryWork.shots.map(s => s.src);
+    const nextOf = (cur) => srcList[(srcList.indexOf(cur) + 1) % srcList.length];
+    const A = mkPanel('art-draw', srcList[0]);
+    const B = mkPanel('music', 'assets/images/_test.jpg');
+
+    eval(read('js/media-swap.js'));
+    await sleep(10);
+
+    const veilA = A.panel.querySelectorAll('.media-panel-veil')[0];
+    ok('★ 遮罩由模块注入（HTML 里没有它）', !!veilA);
+    const fireClick = (p) => {
+        const e = { type: 'click', target: p, preventDefault() {}, stopPropagation() {} };
+        (doc._ev.click || []).forEach(f => f(e));
+    };
+    const fireKey = (p, key) => {
+        const e = { type: 'keydown', key: key, target: p, preventDefault() {}, stopPropagation() {} };
+        (doc._ev.keydown || []).forEach(f => f(e));
+    };
+    const anim = (el, name) => el.fire('animationend', { animationName: name });
+    const tick = () => sleep(0);
+    const cls = (p, c) => p.classList.contains(c);
+
+    /* ---------- ①② 两层**并行**起跑 ----------
+       ★★ P53 之后这里不再"等网点跑完才挂遮罩"：点一下，两个类同时上去，
+          遮罩的迟早在 CSS 的 animation-delay 上（桩里是 --panel-lag）。 */
+    fireClick(A.panel);
+    fireClick(A.panel);          // ★ 连点两下：第二下必须被忽略
+    await tick();
+    ok('①② 点一下：两层同时挂上（is-sweep-in + is-covering），不是一步接一步',
+        cls(A.panel, 'is-swap') && cls(A.panel, 'is-sweep-in') && cls(A.panel, 'is-covering'));
+    ok('★★ 此刻是在等**遮罩**的 animationend（网点的不用等）',
+        !cls(A.panel, 'is-veiled'));
+    /* ★★ 名字不对的 animationend 不许推进：同一个 .media-panel-bg 上
+       先后跑着 halftoneToSolid / halftoneFromSolid 两条动画。 */
+    anim(A.bg, 'halftoneFromSolid');
+    anim(A.bg, 'halftoneToSolid');
+    await tick();
+    ok('★★ 网点的 animationend 不推进流程（它不卡任何一步，只有遮罩卡）',
+        cls(A.panel, 'is-sweep-in') && !cls(A.panel, 'is-veiled'));
+
+    /* ---------- ③ 遮罩盖满 → 换图 ＋ 网点开始返回 ----------
+       ★★ P55：网点的换手（sweep-in → sweep-out）搬到了**盖满那一刻**，
+          和 is-veiled 同一帧 —— 它的 delay 是 `tint − sweep`，
+          正好在幕开始收之前把"实心红"收干净（否则幕一收就露红）。 */
+    anim(veilA, 'panelVeilIn');
+    await tick();
+    ok('③ 盖满那一刻：is-veiled ＋ 网点换手（sweep-out），sweep-in 摘掉',
+        cls(A.panel, 'is-veiled') && cls(A.panel, 'is-sweep-out') && !cls(A.panel, 'is-sweep-in'));
+    /* ★ 这里**不**断言"此刻 is-covering 还在" —— 桩里的图片是同步/立刻就绪的，
+       所以"等图片就位"这一段在这里几乎不占时间，断言会变成竞态（我第一版就是）。
+       这个顺序由源码级那条"换图夹在盖住与收起之间"盯着。 */
+    await sleep(30);
+    ok('★ ③ 换图发生在遮罩盖满之后（连点两下只前进一张）',
+        A.img.getAttribute('src') === nextOf(srcList[0]), A.img.getAttribute('src'));
+
+    /* ---------- ④⑤ 幕收起 + 图缩小，两段同刻起跑 ---------- */
+    ok('④⑤ 图片就位后才换手：uncovering 挂上、covering 摘掉（网点早已换好）',
+        cls(A.panel, 'is-uncovering') && !cls(A.panel, 'is-covering') &&
+        cls(A.panel, 'is-sweep-out'));
+    /* ★★ 收尾要等**三条**动画（Promise.all）：幕、网点、图缩放。
+       只放行幕那一段，链子必须继续等 —— 少等一个，那条动画会被当场掐掉。 */
+    anim(veilA, 'panelVeilOut');
+    await sleep(30);
+    ok('★★ 幕收完了也不能收尾：还在等网点和图缩放',
+        cls(A.panel, 'is-swap') && cls(A.panel, 'is-sweep-out'));
+    /* ★ 名字不对的也不许结束它 */
+    anim(A.bg, 'halftoneToSolid');
+    await sleep(10);
+    ok('★★ 名字不对的 animationend 不算数（要 halftoneFromSolid）',
+        cls(A.panel, 'is-swap'));
+    anim(A.bg, 'halftoneFromSolid');
+    await sleep(30);
+    /* ★★ 网点跑完了、幕也收完了，但**图缩放还没完** —— 还得等它，
+       否则摘类会把它掐在半路（图啪地跳到终态）。 */
+    ok('★★ 网点和幕都完了也要等图缩放（少等它就掐在半路）',
+        cls(A.panel, 'is-swap'));
+    anim(A.img, 'panelImgZoom');
+    await sleep(30);
+    ok('★★ 收尾干净：六个类一个不留（留一个就是一整块红遮罩盖死）',
+        !cls(A.panel, 'is-swap') && !cls(A.panel, 'is-sweep-in') &&
+        !cls(A.panel, 'is-sweep-out') && !cls(A.panel, 'is-covering') &&
+        !cls(A.panel, 'is-uncovering') && !cls(A.panel, 'is-veiled'));
+
+    /* ---------- 键盘等价 + 非 gallery 面板（列表取 cover） ---------- */
+    fireKey(B.panel, 'Enter');
+    await tick();
+    ok('★ 回车能换（键盘等价于点一下）', cls(B.panel, 'is-swap') && cls(B.panel, 'is-covering'));
+    const veilB = B.panel.querySelectorAll('.media-panel-veil')[0];
+    anim(veilB, 'panelVeilIn'); await sleep(30);
+    ok('★ 非 gallery 面板也能换（列表 = [cover]，不报错）',
+        B.img.getAttribute('src') === 'assets/images/_test.jpg');
+    anim(veilB, 'panelVeilOut'); await tick();
+    anim(B.bg, 'halftoneFromSolid'); await tick();
+    anim(B.img, 'panelImgZoom'); await sleep(30);
+    ok('★ 非 gallery 面板也收得干净', !cls(B.panel, 'is-swap'));
+
+    /* ---------- ★★ 事件一个都不来：链子也必须走完 ---------- */
+    /* 这是整节最重要的那条：animationend 不来（元素被隐藏、浏览器不派发、
+       系统降级…）时，最坏结果只能是"动画没看见"，
+       绝不能是"面板被一块红遮罩永久盖住"。 */
+    fireClick(A.panel);
+    await tick();
+    ok('★ 事件不来时：停在这一步等（两层都挂着，说明确实在等遮罩）',
+        cls(A.panel, 'is-swap') && cls(A.panel, 'is-covering') && !cls(A.panel, 'is-veiled'));
+    /* 等超过遮罩那一步的兜底预算：cover + lag + SLACK */
+    await sleep(1400);
+    ok('★★ 事件一个都不来，兜底超时也会把它推进（换图 + 开始收）',
+        cls(A.panel, 'is-veiled') || cls(A.panel, 'is-uncovering'),
+        '类: ' + A.panel.className);
+    /* 把剩下的补上，让它干净收场（否则会留一个挂着的链子） */
+    anim(veilA, 'panelVeilOut'); await tick();
+    anim(A.bg, 'halftoneFromSolid'); await tick();
+    anim(A.img, 'panelImgZoom'); await sleep(30);
+    ok('★★ 兜底路径走完也是干净的', !cls(A.panel, 'is-swap') && !cls(A.panel, 'is-covering'));
+
+    /* ---------- 降低动效：不演，直接换 ---------- */
+    reduceNow = true;
+    const before = A.img.getAttribute('src');
+    fireClick(A.panel);
+    await tick();
+    ok('★★ 降低动效下不演这套动画（一个类都不加），但图照换',
+        !cls(A.panel, 'is-swap') && A.img.getAttribute('src') !== before,
+        A.img.getAttribute('src'));
+    reduceNow = false;
+
+    /* ★★ 这条断言是给**测试自己**立的：如果哪天有人把桩里的
+       `complete = true` 去掉（图不再模拟"缓存命中"），下面这些全绿
+       也说明不了任何问题 —— 真机上炸的就是那条同步路径。
+       所以这里直接数一下它到底走过几次。 */
+    ok('★★ 这一轮确实跑过"缓存命中"的同步预载路径（否则等于没测那个 bug）',
+        (global.Image.__cached || 0) > 0, 'cached=' + (global.Image.__cached || 0));
+
+
+    /* ============================================================
+       5. 侧边栏状态机（P64）
+       ------------------------------------------------------------
+       用的是 [3] 里那套 DOM 桩。侧边栏现在有**真逻辑**了（按 works.js
+       生成卡带、选中态、规格写进舞台），而浏览器在这台机器上跑不了 ——
+       所以照 [3]/[4] 的老办法：把 index.html 的骨架搭成桩，
+       把 js/sidebar.js 真跑一遍。
+       ★ 这一节一个 await 都不需要：sidebar.js 里没有任何定时器
+         （[2o] 那条断言钉的就是这件事），同步就能验完。
+       ============================================================ */
+    section('[5] 侧边栏状态机（P64）');
+    (function sidebarMachine() {
+        /* --- 按 index.html 搭骨架（只搭 sidebar.js 会查的那些） --- */
+        const aside = doc.createElement('aside');
+        aside.className = 'play-sidebar';
+        aside.setAttribute('id', 'play-sidebar');
+        aside.setAttribute('aria-hidden', 'true');
+
+        const rail = doc.createElement('nav');
+        rail.className = 'play-rail';
+        const carts = doc.createElement('ul');
+        carts.className = 'play-carts';
+        carts.setAttribute('data-play', 'carts');
+        rail.append(carts);
+
+        const mainEl = doc.createElement('div');
+        mainEl.className = 'play-main';
+        const barEl = doc.createElement('header');
+        barEl.className = 'play-bar';
+        const sidebarClose = doc.createElement('button');
+        sidebarClose.className = 'play-close';
+        sidebarClose.setAttribute('data-play', 'close');
+        barEl.append(sidebarClose);
+        const stage = doc.createElement('div');
+        stage.className = 'play-body';
+        stage.setAttribute('data-play', 'body');
+        stage.setAttribute('data-state', 'empty');       // ★ 和 index.html 一致
+        const specNo = doc.createElement('p'); specNo.setAttribute('data-play', 'spec-no');
+        const specName = doc.createElement('p'); specName.setAttribute('data-play', 'spec-name');
+        const specMeta = doc.createElement('p'); specMeta.setAttribute('data-play', 'spec-meta');
+        const startBtnEl = doc.createElement('button'); startBtnEl.setAttribute('data-play', 'start');
+        const playStage = doc.createElement('div'); playStage.setAttribute('data-play', 'stage');
+        stage.append(specNo, specName, specMeta, startBtnEl, playStage);
+
+        /* ★ P91：游戏详细页那块 README（和 index.html 一样，排在游戏层之前） */
+        const readmeBox = doc.createElement('div');
+        readmeBox.className = 'play-readme';
+        readmeBox.setAttribute('data-play', 'readme');
+        stage.append(readmeBox);
+
+        /* ★ P86：游戏发来的回执（和 index.html 一样，默认不可见） */
+        const msgEl = doc.createElement('div');
+        msgEl.className = 'play-msg';
+        msgEl.setAttribute('data-play', 'msg');
+        msgEl.setAttribute('role', 'status');
+        stage.append(msgEl);
+
+        mainEl.append(barEl, stage);
+
+        /* ★ P84：游戏区下方那块「游玩注意」（和 index.html 一样，默认 hidden） */
+        const noticeBox = doc.createElement('section');
+        noticeBox.className = 'play-notice';
+        noticeBox.setAttribute('data-play', 'notice');
+        noticeBox.hidden = true;
+        const noticeUl = doc.createElement('ul');
+        noticeUl.className = 'play-notice-list';
+        noticeUl.setAttribute('data-play', 'notice-list');
+        noticeBox.append(noticeUl);
+        mainEl.append(noticeBox);
+        aside.append(rail, mainEl);
+
+        /* 首页那个触发按钮 */
+        const trigger = doc.createElement('button');
+        trigger.className = 'btn primary';
+        trigger.setAttribute('data-play', 'open');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-controls', 'play-sidebar');
+
+        doc.body.append(aside, trigger);
+
+        /* ★ P93：导航栏里那三个"游戏控件" —— 它们在 aside **外面**，sidebar.js 是
+           用 document.querySelector 找的，所以直接挂到 body 上 ✓ */
+        const ctlClose = doc.createElement('button');
+        ctlClose.setAttribute('data-play', 'ctl-close');
+        const ctlMute = doc.createElement('button');
+        ctlMute.setAttribute('data-play', 'ctl-mute');
+        ctlMute.setAttribute('aria-pressed', 'false');
+        ctlMute.disabled = true;
+        const ctlFull = doc.createElement('button');
+        ctlFull.setAttribute('data-play', 'ctl-full');
+        ctlFull.setAttribute('aria-pressed', 'false');
+        ctlFull.disabled = true;
+        doc.body.append(ctlClose, ctlMute, ctlFull);
+
+        const pausedBefore = paused, resumedBefore = resumed;
+        /* 刻度时钟的反向播放：给个计数桩，验"开关两侧都真的喊了它"
+           （四角刻线不再需要桩：P67 起它纯粹由 CSS 看着 body.sidebar-open 自己飞） */
+        let circleHide = 0, circleShow = 0;
+        window.CircleReveal = { hide() { circleHide++; }, show() { circleShow++; } };
+
+        /* ★★ P91：README 的解析器要先在（sidebar.js 渲染时会用 window.Markdown）。
+           桩里做一次同步 thenable 的 fetch —— 真 fetch 是异步的，但这一节一直
+           刻意保持"一个 await 都不用"（见段首说明），而这个桩足够验两条路径：
+           取到 / 取不到。调用顺序：fetch(...).then(A).then(B).catch(C) —— 见 sidebar.js ✓ */
+        eval(read('js/markdown.js'));
+        let fetchCalls = 0;
+        function syncFetch(res) {
+            let value = res, error = null;
+            const api = {
+                then(fn) {
+                    if (error || value == null) return api;
+                    try { value = fn(value); } catch (e) { error = e; }
+                    return api;
+                },
+                catch(fn) { if (error) fn(error); return api; },
+            };
+            return api;
+        }
+
+        eval(read('js/sidebar.js'));
+        const PS = window.PlaySidebar;
+
+        ok('PlaySidebar 导出 open / close / toggle / select',
+            !!PS && typeof PS.open === 'function' && typeof PS.close === 'function' &&
+            typeof PS.toggle === 'function' && typeof PS.select === 'function');
+
+        /* --- 卡带：按 works.js 生成 --- */
+        const btns = carts.querySelectorAll('.play-cart');
+        const unity = (window.WORKS || []).filter((w) => w.kind === 'unity');
+        /* ★★ 这一节全程**从数据里读**，不写死是哪一条：卡带内容是你的数据，随时会变
+           —— 目前就出现过"只挂 readme、没有 src"的条目（md样式）✓。
+           playIdx / secondPlayIdx = 前两张**真能玩**的（有 src）；
+           otherIdx = 任意另一张（不要求能玩，桌面/注意那些测试用它）。 */
+        const playable = unity.map((w, i) => i).filter((i) => !!unity[i].src);
+        const playIdx = playable.length ? playable[0] : -1;
+        const secondPlayIdx = playable.length > 1 ? playable[1] : playIdx;
+        const otherIdx = unity.findIndex((w, i) => i !== playIdx);
+        const play = playIdx >= 0 ? unity[playIdx] : null;
+        const playBtn = playIdx >= 0 ? btns[playIdx] : null;
+        const secondPlay = secondPlayIdx >= 0 ? unity[secondPlayIdx] : null;
+        const secondPlayBtn = secondPlayIdx >= 0 ? btns[secondPlayIdx] : null;
+        const otherWork = otherIdx >= 0 ? unity[otherIdx] : null;
+        const otherBtn = otherIdx >= 0 ? btns[otherIdx] : null;
+        /* ★ 后面到处都要用"另一张卡带" —— 上面已经一次算好（const 有 TDZ，
+           别在下面才声明：前面用了会直接抛 ✗）。 */
+        ok('★ 卡带按 works.js 里 kind === "unity" 的条数生成（' + btns.length + ' 张：' +
+            btns.map((b) => b.getAttribute('data-cart')).join(', ') + '）',
+            btns.length >= 2 && btns.length === unity.length);
+        ok('★ 每张卡带都有编号和（竖排的）名字',
+            btns.every((b) => b.querySelectorAll('.play-cart-no')[0].textContent &&
+                b.querySelectorAll('.play-cart-name')[0].textContent));
+        ok('★（前置）至少有一条 unity 带 src（有真能玩的游戏）：' + (play ? play.id : '(没有)'),
+            !!play && !!playBtn);
+        /* --- ★★ P75：默认**不**选中任何一张 --- */
+        ok('★★ 默认不选中任何一张（PS.current 是 null，两张都没按下）',
+            PS.current === null && btns[0].getAttribute('aria-pressed') === 'false' &&
+            btns[1].getAttribute('aria-pressed') === 'false', String(PS.current));
+        ok('★★ 舞台停在 empty 状态（显示那句"从左侧卡带栏拖动游戏到此处启动游戏"）',
+            stage.dataset.state === 'empty' && /从左侧卡带栏拖动游戏到此处启动游戏/.test(html));
+
+        /* --- ★★ P75：悬停卡带 → 一条跟着鼠标走的回执 --- */
+        window.innerWidth = 1200;      // 给 placeToast 的"夹回视口内"一个真数
+        window.innerHeight = 800;
+        const first = btns[0];
+        first.fire('mouseenter', { target: first, clientX: 120, clientY: 300 });
+        const toast = doc.body.querySelectorAll('.cursor-toast')[0];
+        ok('★★ 悬停卡带生出一条 .cursor-toast.is-follow，内容取自 works.js 的 desc',
+            !!toast && toast.classList.contains('is-follow') &&
+            toast.textContent === (unity[0].desc || unity[0].title),
+            toast ? toast.textContent.slice(0, 20) : '(没有生成)');
+        const t1 = toast && toast.style.transform;
+        first.fire('mousemove', { target: first, clientX: 260, clientY: 520 });
+        ok('★ 跟着鼠标走（位置写在 transform 上，不是 left/top）',
+            !!t1 && !!toast && toast.style.transform !== t1 &&
+            /^translate\(-?[\d.]+px, -?[\d.]+px\)$/.test(toast.style.transform || ''),
+            t1 + '  →  ' + (toast && toast.style.transform));
+        first.fire('mouseleave', { target: first });
+        ok('★★ 鼠标离开就摘掉（不留常驻节点）',
+            doc.body.querySelectorAll('.cursor-toast').length === 0);
+
+        /* --- ★★ P77 / P78：鼠标点一下 ---
+           P77 的要求是"跟随回执不许被 focus 那套重建成卡带顶端那份"；
+           P78 把产品行为改成了"点过就收起来"（游戏区已经显示详细了），
+           所以这里钉的是**新的**结果：收起来 + 之后 mousemove 也不冒回来。 */
+        first.fire('mouseenter', { target: first, clientX: 120, clientY: 300 });
+        ok('★ 点之前回执在', doc.body.querySelectorAll('.cursor-toast').length === 1);
+        first.fire('click', { target: first });        // 点击会给按钮焦点
+        first.fire('focus', { target: first });
+        ok('★★ 点一下：回执收起来（而不是被"键盘那套"顶到卡带顶端）',
+            doc.body.querySelectorAll('.cursor-toast').length === 0);
+        first.fire('mousemove', { target: first, clientX: 200, clientY: 500 });
+        ok('★★ 之后 mousemove 也不许冒回来（clicked 闸门）',
+            doc.body.querySelectorAll('.cursor-toast').length === 0);
+        first.fire('mouseleave', { target: first });
+
+        /* --- ★★ P77b：回执被谁删掉之后，鼠标一按就补回来 ---
+           （真机上"点一下回执就没了"我们没抓稳是哪条事件链，所以做了自愈：
+             元素没了 / 脱离文档，下一次 mousedown 就整条重建。） */
+        first.fire('mouseenter', { target: first, clientX: 150, clientY: 350 });
+        ok('★ 重新悬停：回执又有了', doc.body.querySelectorAll('.cursor-toast').length === 1);
+        doc.body.querySelectorAll('.cursor-toast')[0].remove();     // 模拟"被别处删了"
+        ok('★（模拟）删掉之后它确实不在了', doc.body.querySelectorAll('.cursor-toast').length === 0);
+        first.fire('mousedown', { target: first, clientX: 150, clientY: 350 });
+        const healed = doc.body.querySelectorAll('.cursor-toast')[0];
+        ok('★★ 鼠标一按就补回来，而且仍在鼠标旁边（不是卡带顶端）',
+            !!healed && healed.classList.contains('is-follow') &&
+            healed.style.transform === 'translate(164px, 364px)',
+            healed && healed.style.transform);
+        first.fire('mouseleave', { target: first });
+
+        /* --- ★★ P78：点过之后回执收掉，直到鼠标移出 --- */
+        first.fire('mouseenter', { target: first, clientX: 150, clientY: 350 });
+        ok('★ 悬停时回执在', doc.body.querySelectorAll('.cursor-toast').length === 1);
+        first.fire('click', { target: first });
+        ok('★★ 点一下：回执立刻收掉（游戏区已经显示它的详细了）',
+            doc.body.querySelectorAll('.cursor-toast').length === 0);
+        first.fire('mousemove', { target: first, clientX: 160, clientY: 360 });
+        ok('★★ 鼠标还停着就不许自己冒回来（clicked 闸门 / 自愈也要让路）',
+            doc.body.querySelectorAll('.cursor-toast').length === 0);
+        first.fire('mouseleave', { target: first });
+        first.fire('mouseenter', { target: first, clientX: 150, clientY: 350 });
+        ok('★★ 移出再悬停：回执照旧显示（clicked 已复位）',
+            doc.body.querySelectorAll('.cursor-toast').length === 1);
+        first.fire('mouseleave', { target: first });
+
+        /* --- ★★ P80：指针拖拽（自己实现的那套）拖到舞台上启动 ---
+           桩里所有元素的假矩形都是 (0,0,40,120)，所以指针落在 (20,60) 就算"在舞台上"。
+           阈值 DRAG_MIN = 6：先按在 (10,10) 再移到 (20,60)，曼哈顿距离 60 ≥ 6 → 算拖动。 */
+        /* ★★ 从这里开始的拖动/启动测试一律用 playBtn（第一张**能玩**的卡带）——
+           它们要真的挂 iframe，碰上一张"只挂 readme、没有 src"的条目就白测了 ✓ */
+        playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+        playBtn.fire('pointermove', { target: playBtn, pointerId: 1, clientX: 12, clientY: 12 });
+        ok('★ 只挪 4px：还没到阈值，不算拖动（也就没进 is-dragging）',
+            !stage.classList.contains('is-dragging'));
+        playBtn.fire('pointermove', { target: playBtn, pointerId: 1, clientX: 20, clientY: 60 });
+        ok('★★ 越过阈值：进拖动状态（舞台给虚线提示 is-dragging）+ 指针在舞台上 → is-drop',
+            stage.classList.contains('is-dragging') && stage.classList.contains('is-drop'));
+        ok('★★ P85：拖动期间 body 挂着 is-cart-dragging（整块面板换成"握住"光标）',
+            doc.body.classList.contains('is-cart-dragging'));
+        ok('★ 拖动期间把跟随回执收掉了', doc.body.querySelectorAll('.cursor-toast').length === 0);
+        playBtn.fire('pointerup', { target: playBtn, pointerId: 1, clientX: 20, clientY: 60 });
+        ok('★★ 落在舞台上松手 = 启动（按这张卡带的 id 选中）',
+            PS.current === play.id, String(PS.current));
+        ok('★★ 松手之后两个提示类都清掉、影子也摘掉、body 的"握住"也摘掉',
+            !stage.classList.contains('is-drop') && !stage.classList.contains('is-dragging') &&
+            !doc.body.classList.contains('is-cart-dragging') &&
+            doc.body.querySelectorAll('.is-ghost').length === 0);
+        /* 拖完那一下浏览器还会派发一次 click —— 必须被吃掉，否则状态会再跳一次 */
+        playBtn.fire('click', { target: playBtn });
+        ok('★ 拖完后的那次 click 被吃掉（不再重复选中 / 收执）', PS.current === play.id);
+
+        /* --- 拖到舞台外松手：作废，不改选中 --- */
+        const wasCurrent = PS.current;
+        const other = otherBtn;
+        other.fire('pointerdown', { target: other, button: 0, pointerId: 2, clientX: 200, clientY: 200 });
+        other.fire('pointermove', { target: other, pointerId: 2, clientX: 220, clientY: 220 });
+        other.fire('pointerup', { target: other, pointerId: 2, clientX: 220, clientY: 220 });
+        ok('★ 拖到舞台外面松手 = 作废（选中不变）', PS.current === wasCurrent, String(PS.current));
+
+        /* --- ★★ P81：拖到舞台上 = 真的开始（往游戏层里挂 iframe） --- */
+        playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 3, clientX: 10, clientY: 10 });
+        playBtn.fire('pointermove', { target: playBtn, pointerId: 3, clientX: 20, clientY: 60 });
+        playBtn.fire('pointerup', { target: playBtn, pointerId: 3, clientX: 20, clientY: 60 });
+        ok('★★ 舞台进 play 状态，游戏层里挂上了 iframe',
+            stage.dataset.state === 'play' && playStage.querySelectorAll('.play-frame').length === 1,
+            stage.dataset.state + ' / ' + playStage.querySelectorAll('.play-frame').length);
+        ok('★ 载入层也在（等 iframe 的 load 才淡掉）',
+            playStage.querySelectorAll('.play-loading').length === 1 &&
+            !stage.classList.contains('is-loaded'));
+        const mountedFrame = playStage.querySelectorAll('.play-frame')[0];
+        ok('★★ iframe 指向 works.js 里那条 src（惰性设的，不是写死的）',
+            mountedFrame.src === play.src,
+            String(mountedFrame.src));
+        mountedFrame.fire('load', { target: mountedFrame });
+        ok('★★ 载入完 → is-loaded（CSS 里载入层淡掉）', stage.classList.contains('is-loaded'));
+
+        /* --- ★★ P83：玩游戏的时候，浏览器别抢键 / 别抢右键 ---
+           关键：焦点进了 iframe，父页面**收不到**键盘和右键事件 ——
+           所以守卫要挂两份。桩里没有真的 iframe 文档，自己造一个"同源的"，
+           设成 contentDocument 再重放一次 load，看守卫有没有挂进去。 */
+        const innerDoc = {
+            _ev: Object.create(null),
+            addEventListener(t, f) { (this._ev[t] || (this._ev[t] = [])).push(f); },
+        };
+        mountedFrame.contentDocument = innerDoc;                // 装成"同源，够得着"
+        mountedFrame.fire('load', { target: mountedFrame });    // 重新 load → 重挂守卫
+        ok('★★ 同源：守卫挂进了 iframe 那份文档（keydown + contextmenu + 去重标记）',
+            (innerDoc._ev.keydown || []).length === 1 &&
+            (innerDoc._ev.contextmenu || []).length === 1 &&
+            innerDoc.__playGuarded === true,
+            JSON.stringify(Object.keys(innerDoc._ev)));
+        let innerKey = 0, innerCtx = 0;
+        (innerDoc._ev.keydown || []).forEach(function (f) {
+            f({ key: 'r', ctrlKey: true, preventDefault() { innerKey++; } });
+        });
+        (innerDoc._ev.contextmenu || []).forEach(function (f) {
+            f({ preventDefault() { innerCtx++; } });
+        });
+        ok('★★ 焦点在游戏里：Ctrl+R 被拦下、右键菜单被拦（游戏自己的处理照样收得到这个键）',
+            innerKey === 1 && innerCtx === 1, innerKey + '/' + innerCtx);
+
+        /* 父页面这一份：焦点在站点自己的控件上时管事 —— 而且**只**在玩的时候。
+           桩里 fire 会冒泡到 doc，所以事件的 preventDefault 计数器两边都算，
+           下面只断言"有没有被拦"，不断言拦了几次。 */
+        const parentPress = function (o) {
+            let hit = 0;
+            doc.dispatchEvent(Object.assign({
+                type: 'keydown', ctrlKey: false, shiftKey: false, metaKey: false,
+                preventDefault() { hit++; },
+            }, o));
+            return hit;
+        };
+        ok('★★ 在玩：Ctrl+R / F5 / Ctrl+P 都被拦下（你报的就是第一条）',
+            parentPress({ key: 'r', ctrlKey: true }) === 1 &&
+            parentPress({ key: 'F5' }) === 1 &&
+            parentPress({ key: 'p', ctrlKey: true }) === 1);
+        /* ★★ P84：你列的那一大堆绑定 —— 一个都不许漏（这就是"不逐个列举"的意思） */
+        ok('★★ P84：Ctrl+T / E / 1 / 2 / ` / - / = …… 带修饰键的一律拦（白名单式列举永远漏）',
+            ['t', 'e', '1', '2', '`', '-', '='].every(function (k) {
+                return parentPress({ key: k, ctrlKey: true }) === 1;
+            }));
+        ok('★ Alt 组合同样拦（Alt+← 后退这类浏览器动作）',
+            parentPress({ key: 'ArrowLeft', altKey: true }) === 1 &&
+            parentPress({ key: 'f', altKey: true }) === 1);
+        ok('★★ 逃生口必须都在：Ctrl+W 关标签、F11 全屏、F12 控制台一律不动',
+            parentPress({ key: 'w', ctrlKey: true }) === 0 &&
+            parentPress({ key: 'w', ctrlKey: true, shiftKey: true }) === 0 &&
+            parentPress({ key: 'F11' }) === 0 &&
+            parentPress({ key: 'F12' }) === 0);
+        ok('★★ 不做全键盘吞掉：光秃秃的键、Shift 组合、Tab 一律不碰',
+            parentPress({ key: 'a' }) === 0 &&
+            parentPress({ key: 'ArrowUp' }) === 0 &&
+            parentPress({ key: 'A', shiftKey: true }) === 0 &&
+            parentPress({ key: 'Tab' }) === 0);
+        ok('★★ 输入框里放行（Unity 的隐藏 input：Ctrl+V / A / X 不能被吃，否则游戏里打不了字）',
+            parentPress({ key: 'v', ctrlKey: true, target: { tagName: 'INPUT' } }) === 0 &&
+            parentPress({ key: 'a', ctrlKey: true, target: { tagName: 'TEXTAREA' } }) === 0 &&
+            parentPress({ key: 'c', ctrlKey: true, target: { isContentEditable: true } }) === 0);
+        ok('★ 游戏在跑：舞台上的右键菜单被拦（右键留给游戏）', (function () {
+            let hit = 0;
+            playStage.fire('contextmenu', { type: 'contextmenu', preventDefault() { hit++; } });
+            return hit >= 1;
+        })());
+
+        /* --- ★★ P82：游戏自己喊"我退出了"（postMessage）---
+           桌面版的 Application.Quit() 在网页里会把 WebGL 循环停掉（"卡住"），
+           站点接不住它 —— 但约定了这一句：收到就拔 iframe、退回详情页。 */
+        mountedFrame.contentWindow = { fake: true };     // 桩里没有 contentWindow，给一个
+        doc.dispatchEvent({
+            type: 'message',
+            source: { notTheFrame: true },               // 冒充的 → 必须被忽略
+            data: 'resolualysis:play-exit',
+        });
+        ok('★ 别人发来的同一句话不算数（只认当前那个 iframe）',
+            playStage.querySelectorAll('.play-frame').length === 1 && stage.dataset.state === 'play');
+        doc.dispatchEvent({
+            type: 'message',
+            source: mountedFrame.contentWindow,
+            data: 'resolualysis:play-exit',
+        });
+        ok('★★ 游戏自己喊退出：拔掉 iframe、退回详情页（不留空舞台）',
+            playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game',
+            stage.dataset.state);
+
+        /* 游戏一停，键和右键立刻还给浏览器 —— 否则你连 Ctrl+R 刷本站都刷不了 */
+        ok('★★ 游戏停了：Ctrl+R / F5 立刻还给浏览器（守卫只认 playingGame）',
+            parentPress({ key: 'r', ctrlKey: true }) === 0 &&
+            parentPress({ key: 'F5' }) === 0);
+        ok('★ 没在玩：右键菜单也还给浏览器', (function () {
+            let hit = 0;
+            playStage.fire('contextmenu', { type: 'contextmenu', preventDefault() { hit++; } });
+            return hit === 0;
+        })());
+
+        /* 换一条：正在跑的那套要被卸掉（WebGL 上下文只留一个） */
+        playBtn.fire('click', { target: playBtn });   // ★ 先清掉拖完那次 click 的吞（吞的是**被拖的那张**）
+        secondPlayBtn.fire('click', { target: secondPlayBtn });
+        ok('★★ 换到另一条：旧的 iframe 被卸掉、状态退回 game',
+            playStage.querySelectorAll('.play-frame').length === 0 &&
+            stage.dataset.state === 'game' && !stage.classList.contains('is-loaded'),
+            stage.dataset.state + ' / ' + playStage.querySelectorAll('.play-frame').length);
+
+        /* 「开始游戏」按钮：点击选中的那条路也能开 */
+        startBtnEl.fire('click', { target: startBtnEl });
+        ok('★ 点「开始游戏」：挂上 iframe、进 play',
+            playStage.querySelectorAll('.play-frame').length === 1 && stage.dataset.state === 'play',
+            'current=' + PS.current + ' frames=' + playStage.querySelectorAll('.play-frame').length +
+            ' state=' + stage.dataset.state);
+        /* 收个尾：点另一张把正在跑的卸掉，让后面的断言从干净的 game 态开始 */
+        otherBtn.fire('click', { target: otherBtn });
+        ok('★ 再点另一条：iframe 卸掉、退回 game 态',
+            playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game');
+
+        /* --- 换一张卡带（★ 也是从数据里读：otherBtn）--- */
+        otherBtn.fire('click', { target: otherBtn });
+        ok('★★ 点另一张：选中态翻过去、舞台规格跟着换、状态从 empty 变 game',
+            PS.current === otherWork.id && otherBtn.getAttribute('aria-pressed') === 'true' &&
+            btns[playIdx].getAttribute('aria-pressed') === 'false' &&
+            specName.textContent === (otherWork.title || otherWork.id) &&
+            specNo.textContent === (otherWork.no || '--') &&
+            stage.dataset.state === 'game',
+            specName.textContent + ' / ' + specNo.textContent + ' / ' + stage.dataset.state);
+        ok('★ 挑卡带不会顺手把游乐区打开', !doc.body.classList.contains('sidebar-open'));
+
+        /* --- 开 / 关 --- */
+        trigger.fire('click', { target: trigger });
+        ok('★★ 点按钮：body 挂类 + aria 同步 + 焦点进关闭键 + 背景停表 + 刻度时钟反向闪没',
+            doc.body.classList.contains('sidebar-open') &&
+            aside.getAttribute('aria-hidden') === 'false' &&
+            trigger.getAttribute('aria-expanded') === 'true' &&
+            sidebarClose === doc._focus && paused === pausedBefore + 1 &&
+            circleHide === 1 && circleShow === 0,
+            'focus=' + (doc._focus && doc._focus.className) + ' paused=' + (paused - pausedBefore) +
+            ' clock=' + circleHide + '/' + circleShow);
+
+        sidebarClose.fire('click', { target: sidebarClose });
+        ok('★★ 点关闭：类摘掉 + aria 复位 + 焦点还给按钮 + 背景恢复 + 刻度时钟闪回来',
+            !doc.body.classList.contains('sidebar-open') &&
+            aside.getAttribute('aria-hidden') === 'true' &&
+            trigger.getAttribute('aria-expanded') === 'false' &&
+            trigger === doc._focus && resumed === resumedBefore + 1 &&
+            circleShow === 1, 'clock=' + circleHide + '/' + circleShow);
+
+        /* --- Esc --- */
+        PS.open(trigger);
+        doc.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() { } });
+        ok('★★ Esc 能关', !PS.isOpen && !doc.body.classList.contains('sidebar-open'));
+
+        /* --- 开屏期间不许开 --- */
+        doc.body.classList.add('locked');
+        PS.open(trigger);
+        ok('★★ 开屏期间（body.locked）拒绝打开（否则它会落在开屏那几层下面）',
+            !PS.isOpen && !doc.body.classList.contains('sidebar-open'));
+        doc.body.classList.remove('locked');
+
+        /* --- ★★ P81：关掉再打开 → 舞台回到干净状态 ---
+           现象（你报的）：关掉再打开还留着刚才点过 / 拖进来的那一条。 */
+        PS.open(trigger);
+        /* ★ 复位会清掉选中（这正是要验的行为）—— 所以先重新选一条**能玩的**再开 */
+        playBtn.fire('click', { target: playBtn });
+        startBtnEl.fire('click', { target: startBtnEl });   // 先开一个游戏
+        ok('★ （前置）正在跑：play 态 + 有 iframe',
+            stage.dataset.state === 'play' && playStage.querySelectorAll('.play-frame').length === 1,
+            'current=' + PS.current + ' state=' + stage.dataset.state);
+        PS.close();
+        ok('★★ 关门就把 iframe 卸了（释放 WebGL 上下文），舞台退回 game 态（不是空舞台）',
+            playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game',
+            stage.dataset.state);
+        PS.open(trigger);
+        ok('★★ 再打开：舞台回到 empty、没有 iframe、卡带按下态清掉、选中置空',
+            stage.dataset.state === 'empty' &&
+            playStage.querySelectorAll('.play-frame').length === 0 &&
+            PS.current === null && !stage.classList.contains('is-loaded') &&
+            btns.every(function (b) { return b.getAttribute('aria-pressed') === 'false'; }),
+            stage.dataset.state + ' / current=' + PS.current);
+        ok('★★ 复位也把"点过"的闸门清了（再悬停照样能出回执）',
+            (function () {
+                first.fire('mouseenter', { target: first, clientX: 90, clientY: 90 });
+                return doc.body.querySelectorAll('.cursor-toast').length === 1;
+            })());
+        first.fire('mouseleave', { target: first });
+        PS.close();
+
+        /* --- ★★ P84：「游玩注意」那块提示 ---
+           开关与内容都在 works.js（noticeOn / notice），默认整块不出现。
+           这里临时改那两条数据再选卡带 —— 验的是**渲染这套机制**，
+           不是某一段文案（文案归你自己写，改它要重裁字体 [2b]）。 */
+        const wNot = play;                       // ★ 数据驱动：第一张能玩的卡带（别写死 id）
+        const keepOn = wNot.noticeOn, keepText = wNot.notice;
+        ok('★ 默认不选中任何一条时：那块是 hidden、列表是空的',
+            noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+
+        wNot.noticeOn = true;
+        wNot.notice = ['第一段注意事项', '第二段注意事项'];
+        playBtn.fire('click', { target: playBtn });            // ★ wNot 就是 play：点它的卡带
+        ok('★★ 开关打开 + 两段文字 → 选中卡带就出现，两段按顺序、各是一个 li',
+            noticeBox.hidden === false && noticeUl.childNodes.length === 2 &&
+            noticeUl.childNodes[0].textContent === '第一段注意事项' &&
+            noticeUl.childNodes[1].textContent === '第二段注意事项' &&
+            noticeUl.childNodes[0].className === 'play-notice-item',
+            noticeBox.hidden + ' / ' + noticeUl.childNodes.length);
+
+        wNot.noticeOn = false;
+        otherBtn.fire('click', { target: otherBtn });                   // 换到另一条（那条也没开）
+        playBtn.fire('click', { target: playBtn });                   // 再切回来
+        ok('★★ 开关关掉：那块收起来，而且列表清空（不留上一条的残影）',
+            noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+
+        wNot.noticeOn = true;
+        wNot.notice = '   ';                                  // 开了但只有空白
+        otherBtn.fire('click', { target: otherBtn });
+        playBtn.fire('click', { target: playBtn });
+        ok('★ 开了但内容是空白 → 不出一个空框', noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+
+        wNot.notice = '一句话注意\n第二行';                    // 字符串也吃，\n 分段
+        otherBtn.fire('click', { target: otherBtn });
+        playBtn.fire('click', { target: playBtn });
+        ok('★ 内容写成字符串也行（\\n 分成两段）',
+            noticeBox.hidden === false && noticeUl.childNodes.length === 2 &&
+            noticeUl.childNodes[1].textContent === '第二行');
+
+        wNot.noticeOn = keepOn; wNot.notice = keepText;        // 还原桩里的数据
+        PS.open(trigger);
+        ok('★★ 关门再开门（重置那一刻）：提醒也收掉了',
+            noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+        PS.close();
+
+        /* --- ★★ P85：拦截是 works.js 里一条开关（keyGuardOn）管的 ---
+           开关在按「开始游戏」那一刻抄走（"这一局"和"数据后来改了"互不影响），
+           所以这里要**真的重开一局**才验得出来：换走 → 换回 → 开始。 */
+        const wKey = play;                       // ★ 数据驱动：第一张能玩的卡带
+        const keepKeyGuard = wKey.keyGuardOn;
+        const startBoom = function () {
+            secondPlayBtn.fire('click', { target: secondPlayBtn });      // 先换走（卸掉正在跑的那局）
+            playBtn.fire('click', { target: playBtn });                  // 换回来
+            startBtnEl.fire('click', { target: startBtnEl });            // 真的开
+        };
+
+        wKey.keyGuardOn = keepKeyGuard;                        // 保持数据里那个值
+        startBoom();
+        ok('★（前置）正在跑 + 守卫开着',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            parentPress({ key: 'r', ctrlKey: true }) === 1);
+
+        wKey.keyGuardOn = false;                               // ★ 关掉开关
+        startBoom();
+        ok('★★ 这一条关着 keyGuardOn：Ctrl+R / F5 / Ctrl+E 一律不拦（浏览器照旧）',
+            parentPress({ key: 'r', ctrlKey: true }) === 0 &&
+            parentPress({ key: 'F5' }) === 0 &&
+            parentPress({ key: 'e', ctrlKey: true }) === 0);
+        ok('★★ 右键菜单也一并还回去（整条守卫是同一个开关）', (function () {
+            let hit = 0;
+            playStage.fire('contextmenu', { type: 'contextmenu', preventDefault() { hit++; } });
+            return hit === 0;
+        })());
+
+        wKey.keyGuardOn = true;                                // ★ 开回来
+        startBoom();
+        ok('★★ 开回来再开一局：Ctrl+R 又被拦下（重开才生效 —— 正是我们要的语义）',
+            parentPress({ key: 'r', ctrlKey: true }) === 1);
+
+        /* --- ★★ P86：游戏 → 站点：屏幕上给一条回执 ---
+           走的还是 P82 那条 postMessage 通道（只认当前 iframe 的 e.source），
+           多认了一种消息。这里自己给 iframe 造个 contentWindow 来发消息。 */
+        const msgFrame = playStage.querySelectorAll('.play-frame')[0];
+        msgFrame.contentWindow = { fake: true };
+        const sendMsg = function (data, source) {
+            doc.dispatchEvent({
+                type: 'message',
+                source: source === undefined ? msgFrame.contentWindow : source,
+                data: data,
+            });
+        };
+        sendMsg('resolualysis:play-msg:任务完成');
+        ok('★★ 字符串协议：前缀 + 冒号 + 文字 → 回执显示出来（前缀没混进正文）',
+            msgEl.classList.contains('is-on') && msgEl.textContent === '任务完成',
+            msgEl.textContent);
+        sendMsg('resolualysis:play-msg:换一段\n带换行的');
+        ok('★★ 单行化：换行压成空格（回执是一行字，不是一段文章）',
+            msgEl.textContent === '换一段 带换行的', msgEl.textContent);
+        sendMsg({ type: 'resolualysis:play-msg', text: '对象协议也行', ms: 0 });
+        ok('★ 对象协议 + ms: 0（一直挂着，游戏自己控制何时收）',
+            msgEl.textContent === '对象协议也行' && msgEl.classList.contains('is-on'));
+        sendMsg('resolualysis:play-msg:' + 'x'.repeat(200));
+        ok('★★ 超长截断到 120 字（游戏写错一个长串也不至于糊满屏幕）',
+            msgEl.textContent.length === 120, String(msgEl.textContent.length));
+        sendMsg('resolualysis:play-msg:别人冒充的', { notTheFrame: true });
+        ok('★★ 不是当前 iframe 发来的消息一律不算数（连回执也认 e.source）',
+            msgEl.textContent.length === 120, msgEl.textContent.slice(0, 12));
+        sendMsg('resolualysis:play-msg:');
+        ok('★ 空文字 = 让站点把这条收掉（游戏想自己控制消失时机时用）',
+            !msgEl.classList.contains('is-on') && msgEl.textContent === '');
+        sendMsg({ type: 'resolualysis:play-exit' });            // 顺手验对象形式的"退出"
+        ok('★ 对象形式的"我退出了"也认（msgKind 两种协议通吃）',
+            playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game');
+
+        /* --- ★★ P87：iframe 的控制台接到屏幕回执上（**不用 jslib** 的那条路）---
+           这条存在的理由：WebGL 构建出问题时唯一有信息量的地方是控制台，
+           而作品集访客（你调构建时也一样）通常没开控制台。同源 → 能套一层。 */
+        startBoom();
+        const cFrame = playStage.querySelectorAll('.play-frame')[0];
+        const realLog = function () { };
+        const fakeConsole = { log: realLog, warn: realLog, error: realLog };
+        const fakeWin = { console: fakeConsole };
+        cFrame.contentWindow = fakeWin;
+        cFrame.fire('load', { target: cFrame });                // load 那一刻挂钩子
+        ok('★★ 同源：iframe 的 console 三个口都被套上了（error / warn / log），且只套一次',
+            fakeConsole.error !== realLog && fakeConsole.warn !== realLog &&
+            fakeConsole.log !== realLog && fakeWin.__playConsoleHooked === true);
+        fakeConsole.log('Unity 自己的日志：别上屏');
+        ok('★ 没前缀的 log 一律不管（不然 Unity 的日志会一行一闪）',
+            msgEl.textContent === '' && !msgEl.classList.contains('is-on'));
+        fakeConsole.log('SITE:任务完成');
+        ok('★★ Debug.Log("SITE:…") → 屏幕回执（前缀剥掉）—— 一行 C#、不用 jslib、不动构建',
+            msgEl.textContent === '任务完成' && msgEl.classList.contains('is-on'), msgEl.textContent);
+        fakeConsole.error('NullReferenceException: localPlayer is null');
+        ok('★★ error 一律上屏并带 ERR 标签（WebGL 里最值钱的就是这一条）',
+            msgEl.textContent === 'ERR NullReferenceException: localPlayer is null', msgEl.textContent);
+        fakeConsole.warn('Thread not supported on this platform');
+        ok('★ warn 上屏带 WARN 标签',
+            msgEl.textContent === 'WARN Thread not supported on this platform', msgEl.textContent);
+        for (let i = 0; i < 30; i++) fakeConsole.error('boom ' + i);
+        const capped = msgEl.textContent;
+        fakeConsole.error('额度之后的一条');
+        ok('★★ 控制台回执有额度（一局上限 MSG_ERR_MAX 条）：用完之后不再上屏、也不刷屏',
+            msgEl.textContent === capped && !/额度之后/.test(msgEl.textContent), msgEl.textContent);
+
+        /* --- ★★ P91：游戏详细页 = 一页 README ---
+           ★★ 这里**不写死哪一条**：readme 挂在哪个游戏上属于你的数据，随时会变
+              （这条测试原来写死 semarlog，你把它换成 refactor 之后就误报了 ✗）。
+              改成从 works.js 里找：第一条写了 readme 的 unity、第一条没写的 ✓。
+              卡带是按 kind === 'unity' 的顺序生成的，所以下标一一对应 ✓。 */
+        const unityWorks = (window.WORKS || []).filter(function (w) { return w.kind === 'unity'; });
+        const withIdx = unityWorks.findIndex(function (w) { return !!w.readme; });
+        const withoutIdx = unityWorks.findIndex(function (w) { return !w.readme; });
+        const withWork = withIdx >= 0 ? unityWorks[withIdx] : null;
+        ok('★（前置）至少有一条 unity 写了 readme，而且卡带下标对得上（' +
+            (withWork ? withWork.id : '没有') + '）',
+            !!withWork && !!readmeBox &&
+            btns[withIdx].getAttribute('data-cart') === withWork.id);
+
+        if (withoutIdx >= 0) {
+            btns[withoutIdx].fire('click', { target: btns[withoutIdx] });
+            ok('★ 没写 readme 的卡带（' + unityWorks[withoutIdx].id + '）：不切版式（还是规格卡 + 开始游戏）',
+                !stage.classList.contains('is-readme') && readmeBox.innerHTML === '');
+        }
+
+        window.fetch = function () {
+            fetchCalls++;
+            return syncFetch({ ok: true, text: function () { return '# 标题\n\n正文 **粗**'; } });
+        };
+        btns[withIdx].fire('click', { target: btns[withIdx] });
+        ok('★★ 写了 readme：版式切到 README（is-readme）+ 内容按 Markdown 渲染进去了',
+            stage.classList.contains('is-readme') &&
+            readmeBox.innerHTML.indexOf('<h1 id="标题">标题</h1>') !== -1 &&
+            readmeBox.innerHTML.indexOf('<strong>粗</strong>') !== -1,
+            readmeBox.innerHTML.slice(0, 72));
+
+        if (withoutIdx >= 0) {
+            btns[withoutIdx].fire('click', { target: btns[withoutIdx] });
+            ok('★★ 切回没 readme 的卡带：README 版式收掉 + 内容清空（不留上一页）',
+                !stage.classList.contains('is-readme') && readmeBox.innerHTML === '' &&
+                readmeBox.childNodes.length === 0);
+        }
+
+        btns[withIdx].fire('click', { target: btns[withIdx] });
+        ok('★ 第二次选中同一条：走缓存，不再发请求',
+            fetchCalls === 1 && stage.classList.contains('is-readme'), String(fetchCalls));
+
+        window.fetch = function () {
+            fetchCalls++;
+            return syncFetch({ ok: false, status: 404 });      // 取不到
+        };
+        /* ★ 必须换一个**没被缓存过**的路径 —— 原来那条刚才已经成功过、
+           命中缓存就不会再请求了（这正是上面那条缓存断言验的 ✓）。 */
+        const keepReadmePath = withWork.readme;
+        withWork.readme = 'data/readmes/__missing__.md';
+        if (withoutIdx >= 0) btns[withoutIdx].fire('click', { target: btns[withoutIdx] });
+        btns[withIdx].fire('click', { target: btns[withIdx] });
+        ok('★★ 取不到 → 退回 detail：留一行 ASCII 说明 + detail 的条目（页面不会空）',
+            stage.classList.contains('is-readme') &&
+            readmeBox.innerHTML.indexOf('md-note') !== -1 &&
+            readmeBox.innerHTML.indexOf('README not loaded') !== -1 &&
+            readmeBox.innerHTML.indexOf('<li>') !== -1,
+            readmeBox.innerHTML.slice(0, 72));
+        withWork.readme = keepReadmePath;                       // 还原桩里的数据
+
+        /* --- ★ P91b：README 里的 #锚点点击 → 让面板自己滚（别动整页 hash） --- */
+        (function anchorClick() {
+            /* ★ 桩里 innerHTML 只是存了个字符串、**不会生成子元素**，而真实浏览器里
+               标题是解析出来的 DOM —— 所以这里手工放一个带 id 的元素，模拟"标题在" ✓ */
+            const target = doc.createElement('h2');
+            target.setAttribute('id', '标题');
+            readmeBox.append(target);
+
+            const link = doc.createElement('a');
+            link.setAttribute('href', '#标题');
+            const hit = { prevented: false };
+            readmeBox.fire('click', {
+                target: link,
+                preventDefault: function () { hit.prevented = true; },
+            });
+            ok('★★ 点页内锚点：#锚点被拦住（preventDefault），整页 hash 不会被改',
+                hit.prevented === true);
+
+            const outside = doc.createElement('a');
+            outside.setAttribute('href', 'https://example.com');
+            const hit2 = { prevented: false };
+            readmeBox.fire('click', {
+                target: outside,
+                preventDefault: function () { hit2.prevented = true; },
+            });
+            ok('★ 外链 / 相对链接一律不拦（照旧新窗口打开）', hit2.prevented === false);
+
+            const nowhere = doc.createElement('a');
+            nowhere.setAttribute('href', '#没有这个标题');
+            const hit3 = { prevented: false };
+            readmeBox.fire('click', {
+                target: nowhere,
+                preventDefault: function () { hit3.prevented = true; },
+            });
+            ok('★ 找不到目标标题时也不拦（把点击交回浏览器，别把行为吞掉）', hit3.prevented === false);
+
+            target.remove();
+        })();
+
+        PS.open(trigger);                                       // 开门 → resetStage → hideReadme
+        ok('★★ 关门再开门（复位那一刻）：README 也收掉，下次进来是干净的',
+            !stage.classList.contains('is-readme') && readmeBox.innerHTML === '');
+        PS.close();
+
+        /* --- ★★ P93：导航栏上那三个"游戏控件"（关闭 / 静音 / 全屏）---
+           背景：游乐区展开后导航栏被推到最右边，那几个导航键**还点得动** ✗ ——
+                 玩着游戏手一滑就跳走了。所以展开时把导航键藏掉、换成这三个；
+                 收起的那一瞬间导航键回来（纯 body.sidebar-open 驱动，CSS 那条在 [2af]）。
+           ★ 桩里的 iframe 摸不到音频（真浏览器里跨源也一样摸不到）—— 所以这里
+             只能验"抓不到就**说实话**"，验不了真的静音（那要你的 Unity 构建）。
+           ★ 全屏这一路可以完整验：桩里给 iframe 装上 requestFullscreen，
+             再让 document.fullscreenElement / fullscreenchange 按浏览器的方式变 ✓ */
+        (function navControls() {
+            ok('★ 没在玩游戏时：静音 / 全屏是 disabled（没有对象可操作），关闭键照常能用',
+                ctlMute.disabled === true && ctlFull.disabled === true && !ctlClose.disabled);
+
+            /* 「关闭」＝ 收起游乐区的那条路（和面板里的 ✕ 同一个 close()）——
+               ★ 顺手验"同步摘类"：click 刚派发（还在往上冒泡）时类就已经没了，
+                 所以导航键是**当场**回来的，不靠定时器、不等 450ms 滑完 ✓ */
+            let seenInClick = null;
+            const peek = function () { seenInClick = doc.body.classList.contains('sidebar-open'); };
+            doc.addEventListener('click', peek);
+            PS.open(trigger);
+            const openedByUs = PS.isOpen === true && doc.body.classList.contains('sidebar-open');
+            ctlClose.fire('click', { target: ctlClose });
+            doc.removeEventListener('click', peek);
+            ok('★★ 点「关闭」：游乐区收起（aria 复位 + 焦点还给开门那个按钮）',
+                openedByUs && PS.isOpen === false && !doc.body.classList.contains('sidebar-open') &&
+                aside.getAttribute('aria-hidden') === 'true' && trigger === doc._focus,
+                'open=' + PS.isOpen + ' focus=' + (doc._focus && doc._focus.className));
+            ok('★★ 「收起的一瞬间」就还回来：click 还没冒泡完，body.sidebar-open 已经摘了',
+                seenInClick === false, String(seenInClick));
+
+            /* 开一局：静音 / 全屏这两个才有对象可操作 */
+            PS.open(trigger);
+            playBtn.fire('click', { target: playBtn });
+            startBtnEl.fire('click', { target: startBtnEl });
+            const ctlFrame = playStage.querySelectorAll('.play-frame')[0];
+            ok('★ （前置）这一局真的在跑（舞台上挂着 iframe）',
+                !!ctlFrame && stage.dataset.state === 'play', stage.dataset.state);
+            ok('★★ 开跑那一刻：静音 / 全屏就解除 disabled（startGame 末尾同步的）',
+                ctlMute.disabled === false && ctlFull.disabled === false);
+            ok('★ 两个开关一开始都不是"按下"态',
+                ctlMute.getAttribute('aria-pressed') === 'false' &&
+                ctlFull.getAttribute('aria-pressed') === 'false');
+
+            /* 静音：抓不到音频时**必须说实话**，不许让按钮假装静音了 ✓ */
+            ctlMute.fire('click', { target: ctlMute });
+            ok('★★ 点「静音」：开关进按下态（aria-pressed=true）',
+                ctlMute.getAttribute('aria-pressed') === 'true');
+            ok('★★ 一处在音频都抓不到就说抓不到（不许假装静音成功 —— 这是你一直在意的）',
+                /音频/.test(msgEl.textContent), msgEl.textContent);
+            ctlMute.fire('click', { target: ctlMute });
+            ok('★ 再点一下：解除按下态', ctlMute.getAttribute('aria-pressed') === 'false');
+            ctlMute.fire('click', { target: ctlMute });          // 留着按下的，验"不跨局"
+            ok('★ （前置）现在静音是按下态', ctlMute.getAttribute('aria-pressed') === 'true');
+
+            /* 全屏：桩里给 iframe 装上 requestFullscreen / exitFullscreen，
+               并让 document.fullscreenElement 跟着变（浏览器就是这么做的） */
+            let fsReq = 0, fsExit = 0;
+            ctlFrame.requestFullscreen = function () {
+                fsReq++;
+                doc.fullscreenElement = ctlFrame;
+                doc.dispatchEvent({ type: 'fullscreenchange' });
+                return { catch() { } };
+            };
+            doc.exitFullscreen = function () {
+                fsExit++;
+                doc.fullscreenElement = null;
+                doc.dispatchEvent({ type: 'fullscreenchange' });
+                return { catch() { } };
+            };
+
+            ctlFull.fire('click', { target: ctlFull });
+            ok('★★ 点「全屏」：喊的是**正在跑的那个 iframe** 的 requestFullscreen（不是整页）',
+                fsReq === 1, String(fsReq));
+            ok('★★ 进了全屏：开关反映现实（aria-pressed=true）',
+                ctlFull.getAttribute('aria-pressed') === 'true');
+
+            /* Esc 退出是全屏 API 自己干的 —— 按钮必须跟得上（否则会永远显示"全屏中"） */
+            doc.fullscreenElement = null;
+            doc.dispatchEvent({ type: 'fullscreenchange' });
+            ok('★★ 浏览器那边自己退了（例如 Esc）：按钮跟着复位，不需要我们再点',
+                ctlFull.getAttribute('aria-pressed') === 'false' && fsExit === 0);
+
+            ctlFull.fire('click', { target: ctlFull });          // 再进一次，验"停游戏时退全屏"
+            ok('★ （前置）又进去了', fsReq === 2 && ctlFull.getAttribute('aria-pressed') === 'true');
+
+            otherBtn.fire('click', { target: otherBtn });        // 换一条 → 这一局结束
+            ok('★★ 这一局一停：全屏自动退出（别把浏览器全屏留给后面）',
+                fsExit === 1 && doc.fullscreenElement === null, String(fsExit));
+            ok('★★ 两个开关重新 disabled、按下态清掉 —— 静音**不跨局**（新一局默认有声）',
+                ctlMute.disabled === true && ctlFull.disabled === true &&
+                ctlMute.getAttribute('aria-pressed') === 'false' &&
+                ctlFull.getAttribute('aria-pressed') === 'false');
+
+            delete doc.fullscreenElement;
+            delete doc.exitFullscreen;
+        })();
+
+        delete window.fetch;                                    // 桩撤掉，别影响后面的节
+
+        wKey.keyGuardOn = keepKeyGuard;                        // 还原桩里的数据
+        PS.close();
+    })();
+
+    /* ============================================================
+       [6] Markdown → HTML：真的跑一遍（P91）
+       ------------------------------------------------------------
+       js/markdown.js 是**纯函数**（不碰 DOM、不发请求），所以这一节不需要任何
+       桩：直接喂字符串、断言输出 ✓。也正是"自己写解析器"的好处 —— 每条规则
+       都能钉住，而不是"相信某个库"。
+       ============================================================ */
+    section('[6] Markdown → HTML（P91）');
+    (function markdown() {
+        eval(read('js/markdown.js'));
+        const M = window.Markdown;
+        const h = (s) => M.toHtml(s);
+
+        ok('Markdown 导出 toHtml / slug / escapeHtml / safeUrl',
+            !!M && typeof M.toHtml === 'function' && typeof M.slug === 'function' &&
+            typeof M.escapeHtml === 'function' && typeof M.safeUrl === 'function');
+
+        /* ---------- 标题 + 锚点 ---------- */
+        ok('★ ATX 标题 → h1~h6 + GitHub 风格锚点 id（中文保留、空格转 -）',
+            h('# 玩法说明') === '<h1 id="玩法说明">玩法说明</h1>' &&
+            h('### A B') === '<h3 id="a-b">A B</h3>');
+        ok('★ `#hashtag` 不是标题（ATX 要求 # 后面有空格）',
+            h('#hashtag') === '<p>#hashtag</p>');
+        ok('★★ 同名标题的 id 自动去重（-1 / -2），锚点不会互相打架',
+            /id="重复"/.test(h('## 重复')) &&
+            /id="重复-1"/.test(h('## 重复\n\n## 重复')) &&
+            /id="重复-2"/.test(h('## 重复\n\n## 重复\n\n## 重复')));
+        ok('★★ 预扫也跳过围栏代码块 —— 否则"代码块里的假标题"会让后面每个 id 错位一格',
+            /id="真"/.test(h('```\n# 假\n```\n\n## 真')) &&
+            !/id="假"/.test(h('```\n# 假\n```\n\n## 真')));
+        ok('★ slug：去标点、去强调标记、小写（和 GitHub 一致）',
+            M.slug('玩法与 **操作** 说明!') === '玩法与-操作-说明' && M.slug('Hello, World') === 'hello-world');
+
+        /* ---------- 安全（最要紧的一组）---------- */
+        ok('★★ 内联 HTML **不会**被执行：整段先转义（<script> 只会原样显示）',
+            h('<script>alert(1)</script>') === '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>');
+        ok('★★ `javascript:` / `data:` 链接整个**原样保留**（不生成 a 标签，也不丢括号）',
+            h('[x](javascript:alert(1))') === '<p>[x](javascript:alert(1))</p>' &&
+            h('![x](data:text/html,1)') === '<p>![x](data:text/html,1)</p>');
+        ok('★★ 正常链接：https 自动开新窗 + rel=noopener；相对路径 / #锚点不加 target',
+            /<a href="https:\/\/a\.com" target="_blank" rel="noopener noreferrer">链接<\/a>/.test(h('[链接](https://a.com)')) &&
+            /<a href="assets\/a\.png">图<\/a>/.test(h('[图](assets/a.png)')) &&
+            /<a href="#玩法">跳<\/a>/.test(h('[跳](#玩法)')) &&
+            M.safeUrl('MAILTO:a@b.c') === 'MAILTO:a@b.c');
+        ok('★ 图片 → img + alt + loading=lazy',
+            h('![图](assets/x.png)') === '<p><img src="assets/x.png" alt="图" loading="lazy"></p>');
+
+        /* ---------- 行内 ---------- */
+        ok('★★ 行内代码优先：里面写成 *星号* 也不会变成 <em>',
+            h('`a*b*c`') === '<p><code>a*b*c</code></p>');
+        ok('★ 粗体 / 斜体 / 删除线',
+            h('**粗**') === '<p><strong>粗</strong></p>' &&
+            h('*斜*') === '<p><em>斜</em></p>' &&
+            h('~~删~~') === '<p><del>删</del></p>');
+
+        /* ---------- 段落 / 换行 / 分隔线 / 引用 ---------- */
+        ok('★ 行尾两个空格 = 硬换行 <br>（★ 看的是**上一行**的结尾）',
+            h('上  \n下') === '<p>上<br>\n下</p>' && h('上\n下') === '<p>上\n下</p>');
+        ok('★ 单独一行 --- = <hr>；`|` 那一行不会被误判成分隔线',
+            h('---') === '<hr>' && h('| a |\n| - |\n| 1 |').indexOf('<table') === 0);
+        ok('★ 引用块按空行分段（两段 → 两个 p）',
+            h('> 一\n>\n> 二') === '<blockquote>\n<p>一</p>\n<p>二</p>\n</blockquote>');
+
+        /* ---------- 列表 ---------- */
+        const nested = h('- 一\n  - 一甲\n- 二');
+        ok('★★ 嵌套列表是**合法结构**：子 <ul> 在父 <li> 里面（不是 </li><ul>）',
+            nested.indexOf('<li>一\n<ul>') !== -1 && nested.indexOf('</li><ul>') === -1 &&
+            (nested.match(/<ul>/g) || []).length === 2 && (nested.match(/<\/ul>/g) || []).length === 2);
+        ok('★ 有序列表 <ol>；同层从 ul 换成 ol 会正确关旧开新',
+            h('1. 一\n2. 二').indexOf('<ol>') === 0 &&
+            (h('- 一\n1. 一').match(/<\/ul>/g) || []).length === 1 &&
+            h('- 一\n1. 一').indexOf('<ol>') !== -1);
+        ok('★★ 任务列表：- [x] / - [ ] → 勾选框 + md-task 类（禁用态，点不动）',
+            /<li class="md-task"><input type="checkbox" disabled checked> 做完/.test(h('- [x] 做完')) &&
+            /<li class="md-task"><input type="checkbox" disabled> 没做/.test(h('- [ ] 没做')));
+
+        /* ---------- 表格 ---------- */
+        const tbl = h('| 名 | 数 | 说 |\n|:--|--:|:-:|\n| a | 1 | x |');
+        ok('★★ GFM 表格：表头 + 分隔行（★ 单元格只写一个 - 也认，`|:-:|` 合法）',
+            tbl.indexOf('<table class="md-table">') === 0 &&
+            /<th class="md-l">名<\/th><th class="md-r">数<\/th><th class="md-c">说<\/th>/.test(tbl) &&
+            /<td class="md-l">a<\/td><td class="md-r">1<\/td><td class="md-c">x<\/td>/.test(tbl));
+        ok('★ 表格只在"下一行是分隔行"时才成立（否则就是普通段落）',
+            h('| a | b |\n| 1 | 2 |').indexOf('<p>') === 0);
+
+        /* ---------- 代码块 ---------- */
+        const code = h('```csharp\nvar a = 1 < 2 && *b*;\n```');
+        ok('★★ 围栏代码块：语言名进 data-lang，内容整体转义，而且**不做行内解析**',
+            code === '<pre class="md-code" data-lang="csharp"><code>var a = 1 &lt; 2 &amp;&amp; *b*;</code></pre>');
+        ok('★★ 代码块里的 `#` 不会被当成标题（围栏要真的被跟踪）',
+            h('```\n# 不是标题\n```').indexOf('<h1') === -1);
+
+        /* ---------- 目录 ---------- */
+        const toc = h('[TOC]\n\n## 甲\n\n### 甲一\n\n## 乙');
+        ok('★★ [TOC] → 自动目录，层级按标题嵌套，锚点指向标题 id',
+            /<ul class="md-toc">/.test(toc) && /href="#甲"/.test(toc) && /href="#甲一"/.test(toc) &&
+            (toc.match(/<ul class="md-toc">/g) || []).length === 2);
+        ok('★ [[toc]] 也认（大小写不敏感）；没有标题时输出空（不留空壳）',
+            /md-toc/.test(h('[[TOC]]\n\n# 甲')) && h('[TOC]') === '');
+
+        /* ---------- 真文件也过一遍（站点里实际会渲染的那些 .md）---------- */
+        const mdDir = path.join(ROOT, 'data/readmes');
+        const mdFiles = fs.readdirSync(mdDir).filter((f) => f.endsWith('.md')).sort();
+        ok('★ data/readmes 下有真文件可渲染（' + mdFiles.join(', ') + '）', mdFiles.length > 0);
+        mdFiles.forEach((f) => {
+            const out = h(fs.readFileSync(path.join(mdDir, f), 'utf8'));
+            ok('★ 真 md 渲染干净：' + f + '（没 undefined、没裸露标签）',
+                out.length > 0 && out.indexOf('undefined') === -1 &&
+                out.indexOf('<script') === -1 && out.indexOf('[object') === -1);
+        });
+
+        /* ★★ 速查表里那些"危险示范"必须真的只显示为字面 —— 这是文档与解析器
+           之间最容易脱节的地方（写文档的人以为会转义、实际没转 ✗）。 */
+        const guideOut = h(fs.readFileSync(path.join(mdDir, '_syntax.md'), 'utf8'));
+        ok('★★ 速查表：`javascript:` 链接没变成 <a>（原样显示），内联 HTML 示范被转义成字面',
+            guideOut.indexOf('href="javascript:') === -1 &&
+            guideOut.indexOf('&lt;b&gt;粗&lt;/b&gt;') !== -1);
+        ok('★ 速查表：自己那行"行尾两个空格"确实渲染成了 <br>（文档在演示真行为）',
+            /\u4e24\u4e2a\u7a7a\u683c<br>/.test(guideOut));
+    })();
 
     console.log('\n' + '='.repeat(52));
     console.log(fail ? '\u2718 ' + pass + ' passed, ' + fail + ' failed' : '\u2714 全部通过：' + pass + ' 项');

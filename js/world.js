@@ -49,6 +49,22 @@ window.World = (function world() {
     if (mainEl) mainEl.addEventListener('scroll', queueScroll, { passive: true });
     window.addEventListener('resize', queueScroll);
 
+    /* ============================================================
+       ★★ P68：调整窗口大小期间，先把"跟着窗口走"的过渡压掉
+       ------------------------------------------------------------
+       症状：侧边栏展开后拖动窗口，导航栏的定位明显滞后半秒。
+       原因：它的 left 是 `calc(100vw - var(--nav-width))` —— 窗口一变
+             那个值就变，而 CSS 里挂着 450ms 的过渡。于是"跟随窗口"被
+             演成了一段动画：拖窗口时它永远落后半拍，看起来像坏了。
+       做法：resize 一开始就挂 body.is-resizing（CSS 里把这些过渡压掉），
+             等下面那趟 layout 防抖跑完（= 用户停手 120ms）再摘掉。
+       ★ 挂在 <body> 上而不是 <html>：全站的状态类都在 body 上
+         （window-open / sidebar-open / crosshair-* 都是），保持一致。
+       ============================================================ */
+    window.addEventListener('resize', function () {
+        document.body.classList.add('is-resizing');
+    }, { passive: true });
+
     /* ---------- 主循环 ---------- */
     function frame(now) {
         /* dt 以 60fps 为基准：dt = 1 表示这一帧耗时 16.67ms。
@@ -104,6 +120,9 @@ window.World = (function world() {
     function fireLayout() {
         layoutTimer = null;
         for (const fn of layoutSubs) fn();
+        /* ★ P68：这一趟里所有"因为 resize 变了"的位移都必须瞬时生效，
+           所以等订阅者都跑完（防抖也已经到点 = 用户停手）才把过渡放回去。 */
+        document.body.classList.remove('is-resizing');
     }
     function queueLayout() {
         if (layoutTimer !== null) clearTimeout(layoutTimer);

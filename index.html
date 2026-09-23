@@ -137,6 +137,20 @@
                     </ul>
                 </nav>
 
+                <!-- ★★ P93：游乐区展开时，这一栏的按钮换成"游戏控件"。
+                     起因：游乐区展开后导航栏被推到屏幕右边，但它的按键**还点得动** ——
+                     玩着游戏手一滑就跳走了。
+                     做法：body.sidebar-open 时藏掉 logo / 导航链接 / 主题键，显示这一组 ✓；
+                     `close()` 一开头就摘掉 body.sidebar-open → 所以**收起的那一瞬间**
+                     导航按钮就回来了（不用等面板滑完）✓。
+                     ★ 三个键都有 aria-pressed（静音/全屏是"开关"，状态看得见 ✓）；
+                       没在玩游戏时，静音与全屏是 disabled（没有对象可操作 ✓）。 -->
+                <div class="play-controls" role="group" aria-label="PLAYER">
+                    <button type="button" class="play-ctl" data-play="ctl-close" aria-label="关闭游乐区">关闭</button>
+                    <button type="button" class="play-ctl" data-play="ctl-mute" aria-label="游戏静音" aria-pressed="false" disabled>静音</button>
+                    <button type="button" class="play-ctl" data-play="ctl-full" aria-label="游戏全屏" aria-pressed="false" disabled>全屏</button>
+                </div>
+
                 <!-- ★ 主题切换 -->
                 <button class="theme-toggle" type="button" aria-label="切换主题">
                     <span class="theme-toggle-icon"></span>
@@ -155,7 +169,12 @@
                         <h1><span class="highlight">ResoluAlysis</span></h1>
                         <p class="subtitle">这里是 ResoluAlysis 的个人页，施工中尽情期待</p>
                         <div class="hero-buttons">
-                            <a href="#projects" class="btn primary">作品集</a>
+                            <!-- ★ P63：首页第一个按钮不再是"看作品"，而是"来玩" ——
+                                 点击 = 打开左侧游乐区（整站右移让位），
+                                 见 js/sidebar.js 与 style.css 第 9 节。 -->
+                            <button type="button" class="btn primary" data-play="open"
+                                aria-expanded="false" aria-controls="play-sidebar">玩游戏</button>
+                            <a href="#projects" class="btn ghost">作品集</a>
                             <a href="#contact" class="btn ghost">联系我</a>
                         </div>
                     </div>
@@ -197,47 +216,17 @@
             <section id="skills" class="section alt-bg">
                 <div class="container">
                     <div class="skills-text">
-                        <p>测试文本</p>
-                        <p>测试文本</p>
                     </div>
                 </div>
             </section>
 
+            
+            <section class="deco" data-deco="skills" aria-hidden="true"></section>
+            <section class="deco" data-deco="projects" aria-hidden="true"></section>
+
             <!-- 项目 -->
             <section id="projects" class="section alt-bg">
                 <div class="container">
-                    <h2>作品</h2>
-                    <div class="card-grid">
-
-                        <!-- 卡片自己不带文案：点开是浮窗，内容全部来自 data/works.js，
-                             data-work 就是那件作品的 id。 -->
-                        <!-- <article class="card ak-card" data-work="boom-shooting" tabindex="0" role="button"
-                            aria-label="打开作品：Boom Shooting">
-                            <div class="ak-card-inner">
-                                <img src="assets/images/_test.jpg" alt="Boom Shooting 封面（占位图）" />
-                                <h3>Boom Shooting</h3>
-                                <p>Unity WebGL · 第三人称射击原型</p>
-                                <span class="card-open">查看 ↗</span>
-                            </div>
-                        </article>
-
-                        <article class="card" data-work="fission" tabindex="0" role="button"
-                            aria-label="打开作品：Fission">
-                            <img src="assets/images/_test.jpg" alt="Fission 封面（占位图）" />
-                            <h3>Fission</h3>
-                            <p>Unity WebGL · 解谜原型 · 23MB</p>
-                            <span class="card-open">查看 ↗</span>
-                        </article>
-
-                        <article class="card" data-work="art-draw" tabindex="0" role="button"
-                            aria-label="打开作品：绘画">
-                            <img src="assets/images/_test.jpg" alt="绘画作品封面（占位图）" />
-                            <h3>绘画</h3>
-                            <p>手绘 / 速写 / 数字绘画</p>
-                            <span class="card-open">查看 ↗</span>
-                        </article> -->
-
-                    </div>
                 </div>
             </section>
 
@@ -250,14 +239,26 @@
                 <!-- <h2 class="sr-only">多媒体</h2> -->
 
                 <div class="media-panels">
+                    <article class="media-panel" data-work="games" tabindex="0" role="button"
+                        aria-label="切换底图：游戏开发">
+                        <span class="media-panel-no">04</span>
+                        <div class="media-panel-main">
+                            <h3 class="media-panel-title">游戏开发</h3>
+                            <p class="media-panel-desc">Unity / C# / 玩法原型</p>
+                            <!-- <span class="media-panel-meta">X 个</span> -->
+                        </div>
+                        <div class="media-panel-bg">
+                            <img src="assets/images/_test.jpg" alt="游戏开发面板底图（占位图）" />
+                        </div>
+                    </article>
 
                     <article class="media-panel" data-work="art-draw" tabindex="0" role="button"
-                        aria-label="打开：绘画">
+                        aria-label="切换底图：绘画">
                         <span class="media-panel-no">01</span>
                         <div class="media-panel-main">
                             <h3 class="media-panel-title">绘画</h3>
                             <p class="media-panel-desc">手绘 / 速写 / 数字绘画</p>
-                            <span class="media-panel-meta">X 幅</span>
+                            <!-- <span class="media-panel-meta">X 幅</span> -->
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="绘画面板底图（占位图）" />
@@ -265,12 +266,12 @@
                     </article>
 
                     <article class="media-panel" data-work="art-model" tabindex="0" role="button"
-                        aria-label="打开：建模">
+                        aria-label="切换底图：建模">
                         <span class="media-panel-no">02</span>
                         <div class="media-panel-main">
-                            <h3 class="media-panel-title">建模</h3>
+                            <div class="media-panel-title">建模</div>
                             <p class="media-panel-desc">Blender / 硬表面 / 场景搭建</p>
-                            <span class="media-panel-meta">X 个</span>
+                            <!-- <span class="media-panel-meta">X 个</span> -->
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="建模面板底图（占位图）" />
@@ -278,49 +279,29 @@
                     </article>
 
                     <article class="media-panel" data-work="music" tabindex="0" role="button"
-                        aria-label="打开：编曲">
+                        aria-label="切换底图：编曲">
                         <span class="media-panel-no">03</span>
                         <div class="media-panel-main">
                             <h3 class="media-panel-title">编曲</h3>
                             <p class="media-panel-desc">作曲 / 编曲 / 混音</p>
-                            <span class="media-panel-meta">X 首</span>
+                            <!-- <span class="media-panel-meta">X 首</span> -->
                         </div>
                         <div class="media-panel-bg">
                             <img src="assets/images/_test.jpg" alt="编曲面板底图（占位图）" />
                         </div>
                     </article>
+                </div>
+            </section>
 
-                    <article class="media-panel" data-work="games" tabindex="0" role="button"
-                        aria-label="打开：游戏开发">
-                        <span class="media-panel-no">04</span>
-                        <div class="media-panel-main">
-                            <h3 class="media-panel-title">游戏开发</h3>
-                            <p class="media-panel-desc">Unity / C# / 玩法原型</p>
-                            <span class="media-panel-meta">X 个</span>
-                        </div>
-                        <div class="media-panel-bg">
-                            <img src="assets/images/_test.jpg" alt="游戏开发面板底图（占位图）" />
-                        </div>
-                    </article>
+            <section id="game" class="section alt-bg">
+                <div class="container">
+
 
                 </div>
             </section>
 
-            <!-- 游戏 
-            <section id="game" class="section">
-                <div class="container">
-                    <h2>Unity小游戏</h2>
-
-                    <iframe
-                    src="assets/unityGame/BoomShooting/index.html"
-                    width="980"
-                    height="600"
-                    frameborder="0"
-                    allowfullscreen>
-                    </iframe>
-
-                </div>
-            </section> -->
+            
+            <section class="deco" data-deco="contact" aria-hidden="true"></section>
 
             <!-- 联系我 -->
             <section id="contact" class="section alt-bg">
@@ -443,11 +424,109 @@
         </div>
     </dialog>
 
+    <!-- ============================================================
+         侧边栏：游乐区（P63）
+         ------------------------------------------------------------
+         · 和浮窗一样是 <body> 的直接子元素，理由相同：
+           .page-zoom 上那份开屏 transform 会把 fixed 子元素的包含块抢走；
+         · 展开时它铺满左侧（宽 = --sidebar-w），整站被推到屏幕右缘 ——
+           几何推导写在 style.css 第 9 节；
+         · ★ 游戏就挂在这里：下一轮把 Unity 的 iframe 塞进
+           [data-play="body"]，照 js/floating-window.js 那套
+           "打开才建、关闭就销毁"来写（WebGL 上下文很贵，
+           14~23MB 的构建不能常驻，两套一起留着会吃显存、还会掉帧）。
+         ============================================================ -->
+    <aside class="play-sidebar" id="play-sidebar" aria-label="游戏" aria-hidden="true">
+
+        <!-- 卡带栏：与导航栏同宽（--nav-width），贴在最左边，
+             和屏幕最右边那条导航栏正好镜像。
+             ★ 卡带**不写死**在这里：js/sidebar.js 按 data/works.js 里
+               kind === 'unity' 的条目录生成（唯一数据源 —— 以后往
+               works.js 加一套构建，这里自动多一张卡带）。
+             aria-label 用 ASCII：中文（"游戏列表"）里有子集没收的字，
+             [2b] 会报缺字，为一句无障碍标签重裁字体不划算。 -->
+        <nav class="play-rail" aria-label="PLAYGROUND">
+            <ul class="play-carts" data-play="carts"></ul>
+        </nav>
+
+        <div class="play-main">
+            <header class="play-bar">
+                <span class="play-no">SHEET 02</span>
+                <h2 class="play-title">游戏</h2>
+                <button type="button" class="play-close" data-play="close" aria-label="关闭">关闭</button>
+            </header>
+
+            <!-- 舞台。三种状态（由 js/sidebar.js 切 data-state）：
+                   · empty = 还没选卡带 → 只显示那句提示；
+                   · game  = 选了卡带   → 显示它的规格 + 「开始游戏」；
+                   · play  = 已经开始   → 游戏 iframe 铺满，规格退成「载入中」那层。
+                 ★ 关闭游乐区时 iframe 会被拔掉（释放 WebGL 上下文）；
+                   再打开时舞台回到 empty —— 见 js/sidebar.js 的 resetStage()。 -->
+            <div class="play-body" data-play="body" data-state="empty">
+                <!-- 默认那句提示。★ 文案改了要跑 node _dev/subset-font.js ——
+                     "侧 / 栏 / 拖" 这些字原来不在子集里。 -->
+                <p class="play-hint">从左侧卡带栏拖动游戏到此处启动游戏</p>
+
+                <div class="play-spec">
+                    <p class="play-spec-no" data-play="spec-no">--</p>
+                    <p class="play-spec-name" data-play="spec-name">--</p>
+                    <p class="play-spec-meta" data-play="spec-meta"></p>
+                    <!-- 点击选中的那条路也要能开：点这里 = 和"拖到舞台上"同一件事 -->
+                    <button type="button" class="play-start" data-play="start">开始游戏</button>
+                </div>
+
+                <!-- 游戏详细页 = 一页 README（P91）：选中的卡带在 works.js 里写了
+                     readme 路径，就把那个 .md 渲染到这里（Markdown → HTML，见 js/markdown.js）。
+                     ★ 没写 / 取不到 → 退回 works.js 的 detail，保持原来的观感（页面不会空）。
+                     ★ 默认不占位：.play-body 上没有 .is-readme 时它整个不显示 ——
+                       所以**不用** hidden 属性（那两者会互相打架，见 .play-notice 那段）。 -->
+                <div class="play-readme" data-play="readme"></div>
+
+                <!-- 游戏挂这里。JS 只动这一个容器的内容：
+                     iframe 惰性建（设 src 那一刻才开始下载）、关掉就清空。 -->
+                <div class="play-stage" data-play="stage"></div>
+
+                <!-- 游戏发来的回执（P86）：Unity 那边 postMessage 一句，这里显示一行。
+                     和游戏层同一个定位祖先，但排在它后面 + 更高的 z-index → 盖在画面上。
+                     ★ 文字来自**游戏运行时**，所以用 textContent 写入（永不 innerHTML），
+                       字数、换行、刷屏频率都在 js/sidebar.js 的 showMessage() 里兜着。
+                     role="status" + aria-live：读屏会把这一行读出来（它就是个状态播报）。 -->
+                <div class="play-msg" data-play="msg" role="status" aria-live="polite"></div>
+            </div>
+
+            <!-- 「游玩注意」（P84）：游戏区**下方**的一块提示，默认隐藏。
+                 内容与开关都在 data/works.js 里（noticeOn / notice）——
+                  浏览器里玩这套要注意什么只有你知道，站点只负责显示。
+                 ★ 选中一张卡带就显示（不用等按「开始游戏」）：这行字就是
+                   给"还没进去之前"看的；真进去了满屏都是画面，没人回头。
+                 ★ 默认隐藏靠 hidden 属性 —— 所以 CSS 里 .play-notice
+                   **不许**写 display（写了会盖掉 UA 的 [hidden]）。 -->
+            <section class="play-notice" data-play="notice" hidden>
+                <h3 class="play-notice-title">游玩注意</h3>
+                <ul class="play-notice-list" data-play="notice-list"></ul>
+            </section>
+        </div>
+    </aside>
+
     <!-- 作品数据 + 浮窗控制器。
          ★ 必须放在 <dialog> 之后：控制器在 IIFE 里就直接查 #work-window，
            放前面会查不到（然后它自己安静地不启用）。 -->
     <script src="data/works.js"></script>
     <script src="js/floating-window.js"></script>
+    <!-- P50：点面板换底图。★ 必须排在 data/works.js 之后 ——
+         它从 WORKS 里取那个分类的图（唯一数据源），
+         排在前面会拿不到数据（然后退化成"只演动画、不换图"）。 -->
+    <script src="js/media-swap.js"></script>
+
+    <!-- P91：Markdown → HTML（游戏详细页那页 README 用它）。
+         零依赖的纯函数，只挂一个 window.Markdown。★ 排在 sidebar.js 前面 ——
+         sidebar.js 渲染时会用到它（缺了它就退回 detail，不会报错）。 -->
+    <script src="js/markdown.js"></script>
+
+    <!-- P63：侧边栏（游乐区）。★ 必须排在 <aside id="play-sidebar"> 之后 ——
+         它在 IIFE 里就地查那个元素，放前面会查不到，
+         然后静静地不启用（和浮窗控制器同一个坑）。 -->
+    <script src="js/sidebar.js"></script>
 </body>
 
 </html>

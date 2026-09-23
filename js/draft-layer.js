@@ -48,6 +48,24 @@
 
     /* 塞进导航栏（在 nav 链接之后），flex:1 自己撑满到页脚上方 */
     const navBox = document.querySelector('.nav-container');
+
+    /* ★ P68：|GAME TIME| —— 游乐区展开时，上面那三件（站名 / 推进线 / 读数）
+       淡出、这行字逐个闪出。
+       · 拆成一个字一个 span 就是为了"逐个"：CSS 那边用
+         `animation-delay: calc(var(--i) * 80ms)` 错开（见 .df-gametime）。
+       · 高度不在这里算：CSS 用 `inset: 2px 0` 贴合 .df-strip 的内容框，
+         正好等于 .df-bar 那条推进线的高度。
+       · 整行是 ASCII，不占字体子集的新字形。 */
+    const gametime = document.createElement('div');
+    gametime.className = 'df-gametime';
+    '|GAME TIME|'.split('').forEach(function (ch, i) {
+        const span = document.createElement('span');
+        span.textContent = ch;
+        span.style.setProperty('--i', String(i));
+        gametime.appendChild(span);
+    });
+    strip.appendChild(gametime);
+
     (navBox || document.body).appendChild(strip);
 
     const xEl = strip.querySelector('[data-x]');

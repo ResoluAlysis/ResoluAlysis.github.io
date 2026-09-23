@@ -151,6 +151,51 @@ const cssChars = (src) => {
     return [...noComments.matchAll(/content\s*:\s*(["'])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]).join(' ');
 };
 
+/* ------------------------------------------------------------
+   README（.md）—— **只收会被展示字体渲染的行**（P91）
+   ------------------------------------------------------------
+   README 的字体是分开的（见 css/style.css）：
+     标题 / 表格表头 → 站里的展示字体（HuXiaoBo 子集）→ 这些字**必须**进子集 ✓
+     正文           → 系统字体 → 那些字收进来纯属浪费（子集会被撑大）✗
+   所以这里只挑 ATX 标题行 + 表格表头行。
+   ★ 标记符号（# * ` [ ] ( ) | 之类）是 ASCII，本来就在基础集里，不用剥 ✓；
+     围栏代码块里的 `#` 是注释不是标题，所以要先跳过围栏 ✓。
+   ★ 递归扫（不只 data/readmes 一层）—— 漏掉的文件是**静默**失效的，
+     宁可多扫一点。
+   ------------------------------------------------------------ */
+const mdChars = (src) => {
+    const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
+    const picked = [];
+    const isDelim = (l) => /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes('-');
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        if (/^\s*(```|~~~)/.test(l)) { inFence = !inFence; continue; }
+        if (inFence) continue;
+        if (/^ {0,3}#{1,6}\s+\S/.test(l)) { picked.push(l); continue; }
+        // 表格表头 = 这一行有 | 且下一行是分隔行
+        if (l.includes('|') && i + 1 < lines.length && isDelim(lines[i + 1])) picked.push(l);
+    }
+    return picked.join(' ');
+};
+
+/* 递归列出某个目录下所有指定后缀的文件（相对 ROOT 的路径） */
+const listDeep = (dir, ext) => {
+    const out = [];
+    const walk = (rel) => {
+        let entries = [];
+        try { entries = fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true }); }
+        catch { return; }
+        for (const e of entries) {
+            const r = rel + '/' + e.name;
+            if (e.isDirectory()) walk(r);
+            else if (e.name.endsWith(ext)) out.push(r);
+        }
+    };
+    walk(dir);
+    return out.sort();
+};
+
 const listDir = (dir, ext) => {
     try { return fs.readdirSync(path.join(ROOT, dir)).filter((f) => f.endsWith(ext)); }
     catch { return []; }
@@ -166,6 +211,11 @@ function collect() {
     const jsFiles = [...listDir('js', '.js').map((f) => 'js/' + f),
     ...listDir('data', '.js').map((f) => 'data/' + f)];
     for (const f of jsFiles) bySource[f] = jsStrings(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+
+    // README（.md）：只收标题行 + 表格表头行（正文是系统字体，见 mdChars 说明）
+    for (const f of listDeep('data', '.md')) {
+        bySource[f] = mdChars(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+    }
 
     let text = BASE_RANGES.map(([a, b]) => {
         let s = '';

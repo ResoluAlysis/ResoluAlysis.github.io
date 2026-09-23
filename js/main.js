@@ -102,17 +102,27 @@ if (REDUCE_MOTION) {
              现在改成：先量出当前缩放 → 停掉原动画 → 用 300ms 的补间落到 1，
              等它落稳（下面的 330ms 到点）再加 intro-done，两边对齐就不会跳。 */
         const zoomEl = document.querySelector(".page-zoom");
+        let zoomSettle = null;      // ★ P74：补间要留引用 —— 跑完必须 cancel（见下）
         if (zoomEl) {
             const cur = new DOMMatrixReadOnly(getComputedStyle(zoomEl).transform).a || 1;
             zoomEl.getAnimations().forEach((anim) => anim.cancel());
             zoomEl.style.transform = `scale(${cur})`;     // 固定住当前值，别让它弹回 1.5
-            zoomEl.animate(
+            zoomSettle = zoomEl.animate(
                 [{ transform: `scale(${cur})` }, { transform: "scale(1)" }],
                 { duration: 300, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" }
-            ).finished.then(() => {
-                /* 动画自带 forwards 会一直压着 scale(1)；留着小尾巴无所谓，
-                   但**内联 transform 必须清掉** —— 否则它会盖住 body.intro-done
-                   那条 transform: none，.page-zoom 就一直当 fixed 子元素的包含块。 */
+            );
+            zoomSettle.finished.then(() => {
+                /* ★★ P74：这里原来只清内联 transform，**没有取消动画本身** ——
+                   带 fill: forwards 的 WAAPI 动画会一直把 transform 顶成 scale(1)，
+                   而"非 none 的 transform"让 .page-zoom 继续当**层叠上下文**：
+                   里面所有 z-index（导航栏 100、刻度尺 9996、准星 9997…）
+                   都只在它**内部**有效；对外它只是"层号 0 的非定位元素"。
+                   游戏区是 body 的直接子元素、position: fixed、又在 DOM 更后面，
+                   于是整体压在整站之上 —— 导航栏的外阴影就是这样被它的背景盖住的
+                   （那种"同一声明、两侧观感不同"的怪事，根子在这里）。
+                   这条坑 style.css 720 行那段 .draft-frame 的注释里写着，
+                   只是没人想到"动画跑完了它还在"。 */
+                zoomSettle.cancel();
                 zoomEl.style.transform = "";
             }, () => {});
         }
@@ -125,6 +135,7 @@ if (REDUCE_MOTION) {
         setTimeout(() => {
             document.body.classList.remove("crosshair-fast");
             if (zoomEl) zoomEl.style.transform = "";   // 兜底：内联 transform 一定要清干净
+            if (zoomSettle) zoomSettle.cancel();       // ★ P74：兜底这条路也要取消补间
             document.body.classList.add("crosshair-active-done", "intro-done");
             if (window.World) World.openGate();
         }, 330);   // 0.25s + 一点余量（缩放补间是 300ms，落稳了再解锁）
@@ -373,6 +384,9 @@ if (REDUCE_MOTION) {
 (function disableSelection() {
     // 禁止拖动（针对 img 和 a，即使 CSS 已经处理，JS 兜底）
     document.addEventListener('dragstart', (e) => {
+        /* ★ P79 曾在这里给 .play-cart 开过后门（为了原生拖放）；
+           P80 起卡带的拖动是**自己实现的指针拖拽**（js/sidebar.js），
+           跟原生拖放没关系了 —— 所以后门撤掉，这条恢复成一律拦。 */
         e.preventDefault();
     });
 

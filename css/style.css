@@ -133,7 +133,7 @@ textarea {
 
     --mosaic-color: #323232;
     /* ★ 统一的方块颜色，改这里 */
-    --band-left: 30%;
+    --band-left: 80%;
     /* 中心带左边界 */
 
     /* 布局 */
@@ -192,20 +192,82 @@ textarea {
        ★ 和 --v-inset 成对，正文因此离视口顶 / 底各 10~15vh */
     --safe-b: calc(var(--ruler-h) + var(--v-inset));
 
+    /* --- 侧边栏（游乐区，P63）---
+       --sidebar-w = 展开时"整站留给自己的那一条" = 100vw - --nav-width。
+       展开时：侧边栏占 0 → --sidebar-w；导航栏与页脚左移到 --sidebar-w
+       （宽 75px，正好贴住屏幕右缘）；main 的 margin-left 推到 100vw
+       （整个推出视野）。几何推导写在文件末尾「9. 侧边栏」那一段。 */
+    --sidebar-w: calc(100vw - var(--nav-width));
+    --sidebar-dur: 450ms;
+    --sidebar-pad: clamp(20px, 2.2vw, 48px);
+
+    /* 游乐区里那条回执（悬停卡带时的简述）的**字色**（P76）。
+       ★ 两个主题各留一个钩子：暗色的在这里、亮色的在 :root.light。
+         默认两套都是纯白 —— 游乐区的面板取的是 --navbar-bg，
+         在深浅两套主题里都是**暗**的，所以白字在两边都读得清；
+         要是哪天亮色主题的面板改亮了，只改 :root.light 里那一个就行。 */
+    --play-toast-ink: #fff;
+
+    /* README（游戏详细页，P91）的两档字色 + 几条"浅色水洗"。
+       ★ 为什么不用 --text / --text-muted：那两个跟主题走，而游乐区的面板在深浅
+         两套主题里**都是暗的**（--navbar-bg）—— 亮色主题下 --text 是近黑，
+         铺在暗面板上直接读不清 ✗。所以这块和 --play-toast-ink 同一套逻辑：
+         面板永远是暗的，字就永远用浅色。亮色主题那份在 :root.light（值一样，
+         留着是为了"哪天面板改亮了"只改一处）。 */
+    --play-ink: #E1E1E1;
+    --play-ink-muted: #9aa3b2;
+    --play-wash: rgba(255, 255, 255, 0.06);      /* 代码底 / 表头底 */
+    --play-line: rgba(255, 255, 255, 0.16);      /* 表格边框 / 分隔线 */
+
     /* 多媒体面板（四列）用的两个值：
        --panel-line 是分隔细线（刻意低调，不用 --border 那个高饱和红）；
        --panel-pad  比页面 gutter 略小 —— 四列并排时内容宽度很紧张。 */
     --panel-line: rgba(225, 25, 25, 0.25);
     --panel-pad: calc(var(--gutter) * 0.75);
-    /* 每个多媒体面板的固定宽度，用视口宽度的百分比表达。
-       ★ 这是「版面不随窗口变化」的关键：它只跟视口宽有关、不参与等分，
-         所以窗口缩小也不会把面板挤扁、更不会换行 —— 只会让整行变长。
-       4 × 28vw = 112vw，一行比视口宽出 12%，正好让 main 出现横向滚动。
-       2800px 宽的屏上每只 = 784px。 */
-    --panel-w: 28vw;
+    /* 每个多媒体面板的固定宽度。
+       ★★ P58：从 `28vw` 改成**写死 700px** —— 面板宽度不再跟视口走，
+          窗口怎么缩放它都是 700px（"版面不随窗口变化"这条走到底）。
+       ★ 代价说清楚：一行 4 × 700 = 2800px，视口比它窄时整行溢出、
+         交给 main 横向滚动。而溢出的**幅度是随视口变的**：
+           2800px 宽 → 正好一行放满，不滚
+           1400px 宽 → 只看得到 2 只，要滚整屏
+           3840px 宽 → 4 只只占 73%，右边空出来
+         （原来是 28vw：永远比视口宽 12%，只"露一点"，滚动幅度恒定。） */
+    --panel-w: clamp(240px, 20vw, 400px);
     /* 图片与网点之间那层「半透明纯色」的不透明度。
        颜色固定取 --bg-alt（= #media 容器的底色），所以只留透明度一个旋钮。 */
-    --panel-scrim-alpha: 0.5;
+    --panel-scrim-alpha: 0.3;
+
+    /* P50：点面板换底图那套动画的时长与曲线。
+       ★★ 这几个值由 js/media-swap.js **读出来**用（getComputedStyle），
+          JS 里没有第二份数字 —— 一处改、两处生效。 */
+    --panel-sweep: 450ms;     /* 网点：静止渐变 ⇄ 全不透明 */
+    --panel-cover: 600ms;     /* 红遮罩：展开 / 收起，单向 */
+    --panel-ease: cubic-bezier(0.8, 0, 0.2, 1);
+    /* P53：两层的"错开量"，两处都用它（CSS 里是 animation-delay）——
+         · 网点开始之后 lag，遮罩才开始展开；
+         · 遮罩开始收起之后 lag，网点才开始收回。
+       ★ 写在 CSS 里而不是 JS 定时器：降低动效那条全局规则会把
+         animation-duration 压到 .01ms，定时器不跟着缩，编排就错位了。 */
+    --panel-lag: 50ms;
+    /* P54：红遮罩"盖满之后变成容器底色"那次变色的时长。
+       ★ 一个旋钮管两件事：① `.media-panel-veil` 的 background-color transition；
+         ② 收起动画的延迟（等变色走完才开始收），网点那一步也把它算进去。
+         设成 0ms 就等于关掉这个功能（颜色瞬间切、且立刻开始收）。 */
+    --panel-tint: 400ms;
+    /* P55：换图之后新图"由大缩小"回常态。
+       ★ 曲线和起点距离照搬鼠标悬停那一套（.media-panel-bg 的
+         `transform 0.8s cubic-bezier(0.2, 0.9, 0.3, 1)`、1.06 → 1），所以观感一致；
+         想让缩得更明显就把 --panel-zoom-from 调大（比如 1.18）。
+       ★ 时长默认跟 --panel-cover 一样（600ms）：缩放和幕收起是同一刻起跑的，
+         一样长就刚好"幕收完、图也缩到位"。调长也不会被掐 ——
+         JS 会把它一起等（Promise.all），不会在动画中途摘类。 */
+    --panel-zoom: 600ms;
+    --panel-zoom-from: 1.06;
+    /* P52：红遮罩上下的"软边"厚度。0 = 硬边（回到改之前的样子）。
+       ★ 用 px 不用 %：translateY 的百分比按元素自身高度算，
+         height / 渐变的百分比按包含块算，混用会自相矛盾。 */
+    --panel-feather: 300vh;
 
     /* 光学微调：
        盒顶严格对齐之后，字形的视觉顶边仍会差几像素。正值往下、负值往上。       先设 0，看到偏了再调。 */
@@ -322,6 +384,19 @@ textarea {
     --splash-fade-bg: #ffffff;
     --card-shadow: #c8c8c8;
 
+    /* 游乐区回执的字色（亮色主题这一份，P76）——
+       目前和暗色一样是纯白：游乐区的面板是 --navbar-bg（这里 0.65 的黑，
+       仍然是暗的）。哪天把亮色主题的面板改亮了，只改这一行。
+       另一个钩子在 :root 里。 */
+    --play-toast-ink: #fff;
+
+    /* README 的字色（亮色主题这一份，P91）—— 值和暗色一样：
+       游乐区的面板是 0.65 的黑，仍然是暗的。另一个钩子在 :root 里。 */
+    --play-ink: #E1E1E1;
+    --play-ink-muted: #9aa3b2;
+    --play-wash: rgba(255, 255, 255, 0.06);
+    --play-line: rgba(255, 255, 255, 0.16);
+
     /* 半调网点：亮色主题下换成深色点 */
     --halftone-color: rgba(0, 0, 0, 0.1);
 
@@ -355,8 +430,11 @@ textarea {
    ============================================================ */
 #projects,
 #media,
-#contact {
+#game {
     background: var(--bg-alt);
+}
+#contact {
+    background: var(--black);
 }
 
 /* ============================================================
@@ -702,11 +780,22 @@ body:not(.intro-done) .draft-frame {
     z-index: -1;
 }
 
-/* 点 · 四角刻线（两条边，用 border 画） */
+/* 点 · 四角刻线（两条边，用 border 画）
+   ★★ P67：点「玩游戏」时它们**朝屏幕的四角飞出去**（边飞边变粗、最后化掉）。
+      位移直接用刻线框自己的四个内缩量算，所以一行 JS 都不需要：
+        --content-x 左内缩 / --v-inset 上内缩 / --gutter 右内缩 / --safe-b 下内缩
+      —— 每块刻线正好"退回"它那一侧的屏幕角外面（多飞 24px，确保离屏）。
+      （P66 那版是朝鼠标收缩、最后变成一枚自绘红箭头。你的系统指针本身就是
+        自定义图形，两枚指针同框很出戏，所以改成现在这样。） */
 .df-corner {
     position: absolute;
     width: 16px;
     height: 16px;
+    transition:
+        transform var(--sidebar-dur) var(--panel-ease),
+        border-width var(--sidebar-dur) var(--panel-ease),
+        /* 飞回来：立刻显形（从屏幕外一路飞回来，全程都看得见） */
+        opacity 150ms linear;
 }
 
 .df-tl { top: 0; left: 0; border-top: 1px solid var(--accent); border-left: 1px solid var(--accent); }
@@ -714,10 +803,41 @@ body:not(.intro-done) .draft-frame {
 .df-bl { bottom: 0; left: 0; border-bottom: 1px solid var(--accent); border-left: 1px solid var(--accent); }
 .df-br { bottom: 0; right: 0; border-bottom: 1px solid var(--accent); border-right: 1px solid var(--accent); }
 
+/* 飞走：变粗（1px → 3px）+ 最后一拍化掉，四块各自朝自己的屏幕角去。
+   ★ transition 写在**这一条**里是有意的：CSS 过渡取的是"变化之后"那条规则
+     的 transition —— 于是"飞走"和"飞回来"能用两套时序：飞走最后 150ms 才化掉，
+     飞回来立刻显形（不然会看见四条线从屏幕外凭空淡进来）。 */
+body.sidebar-open .df-corner {
+    border-width: 3px;
+    opacity: 0;
+    transition:
+        transform var(--sidebar-dur) var(--panel-ease),
+        border-width var(--sidebar-dur) var(--panel-ease),
+        opacity 150ms linear calc(var(--sidebar-dur) - 150ms);
+}
+
+/* 四个方向：各自朝自己那一侧的屏幕角外飞（位移 = 该侧的内缩量 + 24px 余量） */
+body.sidebar-open .df-tl {
+    transform: translate(calc(-1 * var(--content-x) - 24px), calc(-1 * var(--v-inset) - 24px));
+}
+
+body.sidebar-open .df-tr {
+    transform: translate(calc(var(--gutter) + 24px), calc(-1 * var(--v-inset) - 24px));
+}
+
+body.sidebar-open .df-bl {
+    transform: translate(calc(-1 * var(--content-x) - 24px), calc(var(--safe-b) + 24px));
+}
+
+body.sidebar-open .df-br {
+    transform: translate(calc(var(--gutter) + 24px), calc(var(--safe-b) + 24px));
+}
+
 /* 竖排进度条：插在 .nav-container 里（nav 链接之后），
    flex: 1 让它自己撑满「链接下方 → 页脚上方」这段高度。
    内容按 -90° 摆：布局上行列互换，文字各自竖排、从下往上读。 */
 .df-strip {
+    position: relative;      /* ★ P68：给下面那行 |GAME TIME| 当定位祖先 */
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -725,6 +845,122 @@ body:not(.intro-done) .draft-frame {
     justify-content: center;
     gap: 9px;
     padding: 2px 0;
+}
+
+/* ============================================================
+   |GAME TIME|（P68）
+   ------------------------------------------------------------
+   游乐区展开时，导航栏下面这三件装饰（站名 / 推进线 / 读数）淡出，
+   这个占满**整条推进线**那一段的文字逐个闪出。
+
+   · 高度 = 推进线的高度：绝对定位 + `inset: 2px 0` —— 那正好是
+     .df-strip 的内容框，也就是 .df-bar（`align-self: stretch` 的那条
+     轨道）的高度。
+     ⚠ 那个 2px 就是 .df-strip 自己的 `padding: 2px 0`，改它要一起改。
+   · 竖排：`writing-mode: vertical-rl` = 由上至下。
+     ★ 这里**不要**跟 .df-v 那族一样加 `rotate(180deg)` —— 那一族是
+       从下往上读的，这行按要求从上往下，所以不翻。
+   · 颜色按要求取 `--text-muted`。
+   · 逐字闪：每个字一个 span + `--i`，delay = `--i × 80ms`
+     （拆字在 js/draft-layer.js 里做，HTML 里只有一行纯文本）。
+   ============================================================ */
+.df-gametime {
+    position: absolute;
+    inset: 2px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.16em;
+    color: var(--text-muted);
+    opacity: 0;
+    pointer-events: none;
+    /* ★ P69：**收回要等游乐区完全关掉**（--sidebar-dur 之后）才开始淡出 ——
+       关的那 450ms 里它跟着导航栏一起滑回去，不许提前化掉。
+       （展开那条写在下面 body.sidebar-open 里，是 120ms 的短延迟。） */
+    transition: opacity 200ms linear var(--sidebar-dur);
+}
+
+/* ★ P69：收回时，三件装饰要**接在 |GAME TIME| 后面**淡回来：
+   等游乐区关完（--sidebar-dur）+ 等那行字淡完（200ms）。
+   ★ 这条过渡写在**基类**上是有意的：CSS 过渡取"变化之后"那条规则的
+     transition —— 关闭时变化之后是基类（带延迟），展开时变化之后是下面
+     那条 sidebar-open（不带延迟，立刻让位）。 */
+.df-name,
+.df-bar,
+.df-read {
+    transition: opacity 200ms linear calc(var(--sidebar-dur) + 200ms);
+}
+
+/* 展开：三件老装饰（站名 / 推进线 / 读数）立刻淡出…… */
+body.sidebar-open .df-name,
+body.sidebar-open .df-bar,
+body.sidebar-open .df-read {
+    opacity: 0;
+    transition: opacity 200ms linear;
+}
+
+/* ……这行字浮出来，每个字错开 80ms 硬闪一下。
+   每个字本身不写 opacity: 0 —— 展开前它们是暗的，靠的是动画 `both`
+   的 backwards 填充（延迟期间停在 0% 那一帧）。这样缩回时那串动画随类消失、
+   字回到 opacity: 1，容器那条 200ms 淡出才真的看得见。 */
+body.sidebar-open .df-gametime {
+    opacity: 1;
+    transition: opacity 200ms linear 120ms;
+}
+
+body.sidebar-open .df-gametime span {
+    animation: gameTimeBlink 0.9s steps(1, end) both;
+    animation-delay: calc(var(--i, 0) * 80ms);
+}
+
+/* steps(1, end)：每段都到最后才跳变 —— 要的就是"闪"，不是渐变 */
+@keyframes gameTimeBlink {
+
+    0% {
+        opacity: 0;
+    }
+
+    40% {
+        opacity: 1;
+    }
+
+    60% {
+        opacity: 0;
+    }
+
+    75% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+/* 降低动效：不闪，直接就是亮的（否则那 0.8s 的错开延迟会让字一个个跳出来）；
+   顺带把这一整套"等游乐区关完再淡回来"的延迟也按掉 —— 降低动效下
+   任何等待都是多余的动作。 */
+@media (prefers-reduced-motion: reduce) {
+    body.sidebar-open .df-gametime span {
+        animation: none;
+        opacity: 1;
+    }
+
+    .df-gametime,
+    .df-gametime span,
+    .df-name,
+    .df-bar,
+    .df-read,
+    body.sidebar-open .df-gametime,
+    body.sidebar-open .df-gametime span {
+        transition: none;
+        animation-delay: 0s;
+    }
 }
 
 .df-v {
@@ -910,7 +1146,7 @@ img {
     height: 100dvh;
 
     background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
-    backdrop-filter: blur(14px) saturate(2.0) brightness(0.85);
+    backdrop-filter: blur(5px) saturate(2.0) brightness(0.85);
     -webkit-backdrop-filter: blur(20px) saturate(1.6);
 
     border-right: 1px solid var(--border);
@@ -983,6 +1219,58 @@ img {
 .nav-links a:hover {
     color: var(--accent);
     transform: translateX(4px);
+}
+
+/* ============================================================
+   P93：导航栏里的"游戏控件"（游乐区展开时顶替导航按键）
+   ------------------------------------------------------------
+   为什么要有它：游乐区展开后导航栏被推到屏幕右边，但它的按键**还点得动** ——
+   玩着游戏手一滑就跳走了 ✗。
+   换法：`body.sidebar-open` 在**开门的一瞬间**就加上、在 `close()` 的**第一行**
+   就摘掉 —— 所以收起的那一瞬间导航按钮就回来了，不用等面板滑完 ✓。
+   ★ 三个键的观感跟 .theme-toggle 同一套（细边框盒子、hover 走主题红）——
+     因为它们本来就住在同一个栏里，只是不同时候出现。
+   ★ 「静音 / 全屏」是开关：aria-pressed="true" 时亮主题红（和卡带选中态一个语言）。
+   ============================================================ */
+.play-controls {
+    display: none;
+}
+
+.play-ctl {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 8px 4px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.play-ctl:disabled {
+    opacity: 0.35;
+    border-color: var(--panel-line);
+}
+
+.play-ctl[aria-pressed="true"] {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.08);
+}
+
+/* 展开游乐区：导航按键让位，游戏控件上岗（瞬时，不做过渡 —— 你要的就是"那一瞬间"） */
+body.sidebar-open .logo,
+body.sidebar-open .nav-links,
+body.sidebar-open .theme-toggle {
+    display: none;
+}
+
+body.sidebar-open .play-controls {
+    display: block;
 }
 
 /* ============================================================
@@ -1121,6 +1409,23 @@ main::-webkit-scrollbar-thumb:hover {
     overflow-y: auto;
 }
 
+/* ★★ P61：**除了首页，各分区不再"至少占满一屏宽"**
+   ------------------------------------------------------------
+   上面 `.section, .hero` 那条一起写着 `min-width: calc(100vw - var(--nav-width))`，
+   意思是"每一节至少一屏宽" —— 内容再短也会顶满整屏，看起来就是"自动占满页面"。
+   现在把分区改成：**最小 1000px，往上随内容长**（`width: max-content` 本来就有）。
+
+   ★ `main` 是 flex **行**容器，各分区是它的 item：宽度 = max(max-content, min-width)。
+     所以只改这一条就够，不用动 `align-self`。
+   ★ 首页 `#home` 是 `<section id="home" class="hero">` —— 它没有 `.section` 这个类，
+     本来就不吃这条；这里再 `:not(#home)` 一次是**两重保险**（万一以后给它加上
+     `.section` 也不会被改到）。它照旧吃 `.hero` 那套一屏宽。
+   ★ 可见后果（这是"不占满"的本意）：内容短的分区右边会露出页面底色，
+     不再被分区自己的底铺满。 */
+.section:not(#home) {
+    min-width: 1000px;
+}
+
 /* ----- 技能页：一整块纯散文 -----
    ------------------------------------------------------------
    版式几乎全交给上面的 .section 通用规则（正文顶在 --v-inset、底边留 --safe-b），
@@ -1220,6 +1525,76 @@ main::-webkit-scrollbar-thumb:hover {
     animation: tileFloat var(--float-dur, 6s) ease-in-out var(--float-delay, 0s) infinite alternate;
 }
 
+/* ============================================================
+   P62：拼接方块背景的"装饰"容器
+   ------------------------------------------------------------
+   从 #skills / #projects / #contact 拆出来的独立容器（见 index.html
+   main 末尾那三个 `<section class="deco">`）。方块本身还是 js/mosaic.js
+   注入的 `.mosaic-layer` + `.mosaic-tile`，这里只管**容器**。
+
+   每个实例只要声明四样，其余都不用碰：
+     --deco-w              宽度（默认 1000px）
+     background            底色（方块之间露出来的那层）
+     --mosaic-color        实色带（.mosaic-layer::before，从 --band-left 铺到右边）
+     --mosaic-tile-color   漂浮方块（不写就与色带同色）
+
+   ★ 高度**不写**：main 是 flex 行，item 默认被拉伸到整行高（= 一屏），
+     和原来那几节一样。想固定就自己加 height。
+   ★ 色带 / 方块颜色现在由**这里**决定：js/mosaic.js 的 CONFIG 里已经把
+     color / tileColor 去掉了（那两项会写成 inline style，反过来盖住 CSS）。
+   ★ 下面三个实例的取值是**照搬拆之前**那一套的：
+       #skills    —— 自己没 background（露 body 色）+ 色带/方块走全局 --mosaic-color
+       #projects  —— background: --bg-alt，色带/方块同为 --bg-alt
+       #contact   —— background: --bg-alt，色带/方块同为 --black
+     （方块在 #projects 上因此和底色同色、几乎看不见 —— 这是拆之前就有的
+       状态，不是这次改出来的；想让它显出来就改那两行颜色。）
+   ============================================================ */
+.deco {
+    --deco-w: 1000px;
+    position: relative;          /* .mosaic-layer 是绝对定位，必须有定位祖先 */
+    isolation: isolate;          /* 和 .section.alt-bg 一样的处理 */
+    flex: 0 0 auto;              /* main 是 flex 行：不收缩、不被压扁 */
+    width: var(--deco-w);
+    overflow: visible;           /* 方块允许溢出格子 */
+    pointer-events: none;        /* 纯装饰，不吃鼠标 */
+    --mosaic-color: var(--black);
+    --mosaic-tile-color: var(--mosaic-color);
+}
+/*
+--deco-w              
+宽度（默认 1000px）
+background            底色（方块之间露出来的那层）
+--mosaic-color        实色带颜色
+--mosaic-tile-color   漂浮方块颜色
+*/
+
+/* #skills 那一块：原来它自己**没有** background，露的是 body 色 */
+.deco[data-deco="skills"] {
+    --mosaic-color: var(--bg);
+    --mosaic-tile-color: var(--bg);
+    /* 色带 / 方块都不覆盖 → 走全局的 --mosaic-color（跟着主题变） */
+}
+
+.deco[data-deco="projects"] {
+    background: var(--bg-alt);
+    --mosaic-color: var(--bg-alt);
+    --mosaic-tile-color: var(--bg-alt);
+}
+
+.deco[data-deco="contact"] {
+    background: var(--bg-alt);
+    --mosaic-color: var(--black);
+    --mosaic-tile-color: var(--black);
+}
+
+/* 手机端：装饰容器跟着屏幕宽走（方块本来就被 js 拆掉了，只剩底色） */
+@media (max-width: 768px) {
+
+    .deco {
+        --deco-w: 100%;
+    }
+}
+
 @keyframes tileFloat {
     0% {
         transform: translate(0, 0) rotate(0deg);
@@ -1312,7 +1687,19 @@ main::-webkit-scrollbar-thumb:hover {
     border-radius: 2px;
 }
 
-.section h3 {
+/* ★★★ P60：**这条规则曾经把 `.media-panel-title` 完全压死。**
+   `.section h3` 的特异度是 (0,1,1)（一个类 + 一个元素），
+   而 `.media-panel-title` 是 (0,1,0)（一个类）——
+   **特异度高的赢，跟写在文件里哪个位置毫无关系。**
+   于是面板标题的 `font-size` / `margin` 全部失效：
+     · 字号永远是这里的 1.15rem（≈18.4px），`.media-panel-title` 里
+       写 100rem、1000vw 都不会有反应；
+     · margin 也永远是这里的 `24px 0 12px`，不是面板规则里的 0。
+   这也是"把容器从 `h3` 换成 `div` 就好了"的原因 —— `div` 不匹配 `.section h3`。
+   ★ 修法是在**源头**排除，而不是给面板规则加特异度：
+     这条规则的意图是"分区里的通用小标题"，面板标题不属于这一类。
+   （`<p>` 那边没有同类规则 —— 面板说明只吃自己的 `.media-panel-desc`。） */
+.section h3:not(.media-panel-title) {
     margin: 24px 0 12px;
     font-size: 1.15rem;
 }
@@ -1635,72 +2022,6 @@ main::-webkit-scrollbar-thumb:hover {
     font-size: 0.9rem;
 }
 
-/* ===== 方舟风卡片 ===== */
-.ak-card {
-    position: relative;
-    background: #191919;
-    border: 1px solid rgba(17, 175, 207, 0.4);
-    overflow: hidden;
-
-    /* 硬阴影（方舟风格关键） */
-    box-shadow: 6px 6px 0 rgba(17, 175, 207, 0.15);
-    transition: box-shadow 0.3s, transform 0.3s;
-}
-
-.ak-card.is-hot {
-    transform: translate(-2px, -2px);
-    box-shadow: 8px 8px 0 rgba(17, 175, 207, 0.3);
-}
-
-/* 斜切角 */
-.ak-card-inner {
-    clip-path: polygon(0 0,
-            100% 0,
-            100% calc(100% - 16px),
-            calc(100% - 16px) 100%,
-            0 100%);
-    padding: 20px;
-}
-
-/* 网格背景（内部） */
-.ak-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-        linear-gradient(rgba(17, 175, 207, 0.06) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(17, 175, 207, 0.06) 1px, transparent 1px);
-    background-size: 20px 20px;
-    z-index: 1;
-}
-
-/* 扫描线 + 光带（hover 时启动） */
-.ak-card::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: repeating-linear-gradient(0deg,
-            rgba(0, 0, 0, 0.2) 0px,
-            rgba(0, 0, 0, 0.2) 1px,
-            transparent 1px,
-            transparent 4px);
-    opacity: 0.3;
-    z-index: 2;
-}
-
-.ak-card.is-hot::after {
-    opacity: 0.8;
-}
-
-/* 内容在网格和扫描线之上 */
-.ak-card-inner {
-    position: relative;
-    z-index: 3;
-}
-
-
 /* ----- 多媒体 ----- */
 audio {
     width: 100%;
@@ -1778,11 +2099,17 @@ video {
     overflow: hidden;                 /* 悬停揭示时把放大中的底图裁掉 */
     display: flex;
     flex-direction: column;
-    justify-content: space-between;   /* 编号贴顶、正文贴底 */
-    gap: 4vh;
+    /* ★★ P56：**去掉了 `justify-content: space-between`**（原来是"编号贴顶、
+       正文贴底"）。面板高度跟着视口/分区走，把正文钉在底部，
+       一缩放窗口它就上下跑 —— 也就是你说的"文字会跑"。
+       现在正文块挂在布局规格上（见下面对 .media-panel-main 的 top: var(--v-inset)），
+       面板里只剩编号一个在流里，于是它自己贴顶。 */
 
     min-height: 60dvh;                /* 手机：每格约六成屏高 */
-    padding: var(--panel-pad) calc(var(--panel-pad) * 0.8);
+    /* ★★ P56：左右内边距改成 **5vw**。正文块是绝对定位、离边框就是 5vw；
+       编号在流里、吃的是这个 padding —— 两边同一个值，
+       编号和标题的左边缘才会落在同一条线上。 */
+    padding: var(--panel-pad) 5vw;
 
     border-top: 1px solid var(--panel-line);
     border-bottom: 1px solid var(--panel-line);
@@ -1825,20 +2152,68 @@ video {
     color: var(--text-muted);
 }
 
-/* 正文：贴底 */
+/* 标题 + 说明：一块**挂在布局规格上**的文字（P56）
+   ------------------------------------------------------------
+   · 上边贴在 `--v-inset` 的**下端** —— 也就是内容安全区那条线再往下走一套
+     同样的节奏。不再靠"面板底部"定位：面板高矮随视口变，靠底部就会被拖着跑。
+   · 左右各离面板边框 **5vw**，和面板自己的 padding 是同一个值 ——
+     所以它和上面那个编号左对齐。
+   · 标题在左、说明在右：一行 flex。`align-items: baseline` 让两个**不同字号**
+     的文字按**基线**对齐（用 flex-start 会看出高低差）。
+   · 说明靠 `margin-left: auto` 顶到右侧：单行时它的右边缘正好落在 5vw 那条线上。
+   ★ 那段注释掉的 `.media-panel-meta` 要是以后启用：别直接放开 ——
+     它会变成这一行的**第三项**、被挤到最右边。跟说明一起包进一个容器里，
+     或者挪到标题下面。 */
 .media-panel-main {
-    position: relative;
+    position: absolute;
+    bottom: calc(var(--v-inset) - 10px);
+    left: min(10vh, 25px);
+    right: min(10vh, 25px);
+    /* ★★ P57：要"留在安全区范围内"，关键不是再写几个 insets，而是**别重复扣**。
+       分区（.section）的 padding 就是 `--v-inset … --safe-b`，而面板正好铺在
+       这个内容盒里 —— **面板自己的上下边就是安全区那两条线**：
+
+         面板顶边 = 视口顶往下 --v-inset    （安全区上沿）
+         面板底边 = 视口底往上 --safe-b     （安全区下沿）
+
+       所以在面板**里面**再写一次 `--v-inset` / `--safe-b` / `--content-x`
+       都是把同一条线量了两遍（`bottom: var(--safe-b)` 会把文字抬高两倍）。
+       里面要用的值是 **0**（贴线），或者**面板自己的** --panel-pad（留一点内边距）。
+
+       ★ 这条 `max-height` 是真正"兜住"的那一句：块往上长，最多长到面板顶边
+         （= 安全区上沿）就停，不会被面板的 `overflow: hidden` 切掉。
+         `100%` 是面板的内边距盒高度，而面板上下边就是安全区两条线，
+         所以这个上限正好等于"不越过安全区上沿"。 */
+    max-height: calc(100% - var(--v-inset));
     z-index: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: calc(var(--panel-pad) * 0.5);
+    min-height: 0;
 }
+
 .media-panel-title {
-    margin: 0 0 0.55em;
-    font-size: clamp(1.35rem, 2.3vh, 2.1rem);
+    flex: 0 0 auto;                   /* 窄窗口时先让说明换行，别把标题挤变形 */
+    margin: 0;                        /* P56：同一行里不再需要下方留白 */
+    /* ★★★ P60：这条规则以前是**失效**的 —— 字号怎么改都没反应。
+       原因不是"写在后面"，是**特异度**：`.section h3`(0,1,1) 高于
+       `.media-panel-title`(0,1,0)。P60 已经在源头给它加了
+       `:not(.media-panel-title)`，从这一版起这条规则才真的生效
+       （连带 margin: 0 也才生效 —— 以前它一直被 `.section h3` 的
+        `margin: 24px 0 12px` 压着）。
+       ★ 字号：最小 30px、最大 50px，中间跟视口宽度走。
+         3.4vw 的对应：882px 宽 → 30px，1471px 宽 → 50px。 */
+    font-size: clamp(30px, 3.4vw, 50px);
     font-weight: 700;
     letter-spacing: 0.02em;
     transition: color 0.25s ease, transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
+
 .media-panel-desc {
     margin: 0;
+    margin-left: auto;                /* P56：顶到右侧（右边缘 = 5vw 那条线） */
+    min-width: 0;                     /* 允许它缩到内容宽度以下（也就是换行） */
     font-size: 0.9rem;
     line-height: 1.6;
     color: var(--text-muted);
@@ -1937,13 +2312,20 @@ video {
     inset: 0;
     z-index: 2;                    /* 夹层是 1、图片是 0 —— 网点在最上面 */
     pointer-events: none;
-    /* 0% 最红 → 40% 完全透明。
-       ★ 只写两个停止点就够了：CSS 渐变在最后一个停止点之后会一直沿用
-         它的值，所以 40% ~ 100% 会保持全透明，不需要再补一个 100% 的停止点。 */
+    /* 三段结构：实心 → 淡出 → 全透明。
+       ★★ P50：停止点改成自定义属性，好让 js/media-swap.js 换底图时
+         把这个渐变**连续**推到"全不透明"再推回来。
+       ★ 静止态是 --hl-solid: 0% / --hl-end: 40% / --hl-a: 0.8 ——
+         也就是改成三段之前的 `rgba(225,25,25,.80) 0% → rgba(225,25,25,0) 40%`，
+         **逐像素等价**（实心段宽度 0，等于没有）。
+       ★ 不再是"只写两个停止点"了：那时候靠"最后一个停止点之后一直沿用它的值"
+         就能得到 40% 以下全透明；现在第三个停止点是变量，
+         万一它被推到 40% 以下就会把透明区往回缩，所以三段都得写全。 */
     background-image: linear-gradient(
         to bottom,
-        rgba(225, 25, 25, 0.80) 0%,
-        rgba(225, 25, 25, 0)    40%
+        rgba(225, 25, 25, var(--hl-a, 0.8)) 0%,
+        rgba(225, 25, 25, var(--hl-a, 0.8)) var(--hl-solid, 0%),
+        rgba(225, 25, 25, 0) var(--hl-end, 40%)
     );
     -webkit-mask-image: radial-gradient(circle, #000 1px, transparent 1.5px);
             mask-image: radial-gradient(circle, #000 1px, transparent 1.5px);
@@ -1972,6 +2354,326 @@ video {
         color: var(--accent);
         transform: translateY(-0.12em);
     }
+}
+
+/* ============================================================
+   P50：点一下面板 → 换一张底图
+   ------------------------------------------------------------
+   P53 起是"两半各自错开并行"，错开量在 animation-delay 上（--panel-lag）：
+
+     t = 0                 ① 网点：淡出区一路下推，直到整层"全不透明"
+     t = lag               ② 红遮罩：从上边滑进来，实心段铺满整格
+     t = lag + cover       ③ 遮罩盖满 → 换 <img> ＋ 红遮罩开始往下收回
+     t = lag + cover + lag ⑤ 网点：从全不透明**反向**回静止的 0%~40%
+                           （④ = 遮罩收回，和 ③ 同一刻起跑）
+
+   ★★ 三层是并行的，不是"一步接一步"：② 只比 ① 晚 lag 起跑、并不等它跑完；
+      ⑤ 只比 ④ 晚 lag 起跑。所以整段比串行版短，两层在交界处是叠着动的。
+   ★★ 调参时的一条约束：`--panel-sweep` 最好 **≤ `--panel-lag + --panel-cover`**，
+      也就是"遮罩盖满之前，网点已经到全不透明"。超了的话，换图那一刻网点还在
+      半透明状态，而 is-sweep-out 的起态兜底是"全不透明"，会被硬拉上去跳一下。
+      （当前 360 ≤ 200 + 440 ✔）
+
+   ★★ 网点那几帧靠三个自定义属性驱动，它们必须用 @property 注册过才能
+      **连续插值**。没注册的话自定义属性是离散的：关键帧会变成几下硬切。
+      （@property 这个文件里本来就在用 —— 见上面的 --scroll-x。）
+   ★ 渐变的三段结构（实心 → 淡出 → 全透明）：
+        rgba(a) 0% … rgba(a) var(--hl-solid) … rgba(0) var(--hl-end)
+     静止态 = --hl-solid: 0% / --hl-end: 40% / --hl-a: 0.8。
+     "全不透明"用 --hl-solid: 100% / --hl-end: 200% 表达：
+     淡出区整段被推到盒子外面，可见部分自然全是实的 ——
+     不需要为这一帧单开一条规则（也就不会有"切换那一瞬间"的跳变）。
+   ★ inherits: true 是必须的：动画挂在 `.media-panel-bg`（真元素）上，
+     用值的却是它的 `::after`（伪元素）。挂在真元素上的另一个原因见 JS ——
+     `animationend` 在伪元素上不可靠，而这条链一步都不能错。
+   ============================================================ */
+@property --hl-solid {
+    syntax: "<percentage>";
+    inherits: true;
+    initial-value: 0%;
+}
+
+@property --hl-end {
+    syntax: "<percentage>";
+    inherits: true;
+    initial-value: 40%;
+}
+
+@property --hl-a {
+    syntax: "<number>";
+    inherits: true;
+    initial-value: 0.8;
+}
+
+/* 换图期间**强制露出底图**。
+   `.media-panel-bg` 平时是 opacity: 0，只在 .is-hot 时可见，而那条规则
+   还包在 @media (hover: hover) 里 —— 触屏点一下根本没有 hover，
+   动画就会在完全透明的一层上演，等于没演。这条放在媒体查询**外面**。 */
+.media-panel.is-swap .media-panel-bg {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* ============================================================
+   红遮罩：JS 注入到每只面板里的一个空 div（见 js/media-swap.js）
+   ------------------------------------------------------------
+   ★ P52：**下边的硬边改成"不透明 → 透明"的渐变**。
+
+   ★★ 为什么不能只是"给它一个渐变背景"（我第一反应就是这个，但它不行）：
+     给 `.media-panel-veil` 写个 `linear-gradient(accent, transparent)`、
+     继续用 scaleY 撑开，那么**罩子底部永远留着一截是半透明的** ——
+     而"完全盖住"那一刻图正在换，换图就会被看见。
+     scaleY 把元素自己（连同它的渐变）一起压扁，所以渐变只能收在元素盒子里，
+     收不到盒子外面去。要用到"软边推到盒子外面"这一手，罩子必须能**滑**。
+
+   ★ 所以改成：罩子比面板**高两个羽化量**，渐变是
+     「透明 → 实心 → 实心 → 透明」（上下两头都软），裁剪交给**面板自己的
+     overflow: hidden**（不用再套一层），动画只动 transform：
+
+       展开  translateY(-100%)        → translateY(-羽化量)
+       收起  translateY(-羽化量)       → translateY(100%)
+
+   ★★ 为什么 `to` 是 `-羽化量` 而不是 0：罩子高 H+2F，实心段在它自己的
+     局部坐标里是 [F, H+F]。把它整体上移 F（= translateY(-F)），
+     实心段正好落在 [0, H] —— **整格铺满、上下两条软边都在格子外面**。
+     所以"完全盖住"是真的完全盖住（P50 换图那条硬要求）。
+   ★ 收起就是"接着往下滑出去"：红色从上边开始消失、一路退到底，
+     正好是你要的"从上端 0% 向下 100% 逐渐收起"，
+     而且比"换 transform-origin 再 scaleY"直白得多（不用再换 origin）。
+
+   ★ 羽化量用 **px** 不用 %：translateY 的百分比按**元素自身高度**算，
+     而 height / 渐变的百分比按**包含块**算 —— 两个参照系混用会自相矛盾
+     （同一个 12% 在三处解析成三个不同的长度）。
+   ★ 首尾写 rgba(225,25,25,0) 而不是 `transparent`：`transparent` 是
+     rgba(0,0,0,0)，和 --accent 插值时有的引擎会中间发灰；
+     同一个红、只把 alpha 打到 0，最稳。
+   ★ pointer-events: none 不能省：准星靠 elementFromPoint 做命中测试，
+     一层吃鼠标的遮罩会把 .media-panel 的悬停态整段掐掉。
+   ============================================================ */
+.media-panel-veil {
+    /* P54/P55：颜色就是 background-color 本身，**不再绕一层自定义属性** ——
+       绕一层的话，那条 transition 的插值目标要经过一次变量解析，
+       多一个可能出岔子的环节。 */
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    /* 比面板高两个羽化量。用 top/bottom 撑出来（和 .media-panel-bg 的
+       inset: 0 同一套解析方式），比写 height: calc(100% + …) 稳 ——
+       百分比 height 在包含块高度不确定时会退化成 auto。 */
+    bottom: calc(-2 * var(--panel-feather));
+    z-index: 2;
+    /* ★★ P54：软边从"渐变背景"改成**遮罩**，背景只剩一块纯色。
+       原来背景是四段渐变（透明→红→红→透明），想换颜色就得去插值那个渐变
+       （各家对渐变插值一直不齐），而且"同色但 alpha=0"还得先算出来 ——
+       `transparent` 是 rgba(0,0,0,0)，不能拿来当"同一个红的透明版"。
+       拆成"纯色 + mask"之后：
+         · 颜色在 background-color 上做**普通 transition**（到处都支持）；
+         · 软边形状固定，和颜色彻底解耦。
+       渲染结果和原来等价：同一个色相、只让 alpha 沿纵向渐变。
+       （遮罩里的透明**没有**发灰问题 —— mask 只看 alpha，不看颜色。） */
+    background-color: var(--accent);
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0,
+        #000 var(--panel-feather),
+        #000 calc(100% - var(--panel-feather)),
+        rgba(0, 0, 0, 0) 100%
+    );
+            mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0,
+        #000 var(--panel-feather),
+        #000 calc(100% - var(--panel-feather)),
+        rgba(0, 0, 0, 0) 100%
+    );
+    transform: translateY(-100%);          /* 静止：整条幕在格子上方，被裁掉 */
+    pointer-events: none;
+    will-change: transform;
+    /* 变色就是一条普通 transition：`--panel-tint` 既是它的时长，
+       也是收起动画的延迟（见下面的 is-uncovering）—— 一个旋钮两处生效。 */
+    transition: background-color var(--panel-tint) var(--panel-ease);
+}
+
+/* ★★ P54：盖满那一刻，红色 → **容器底色**（`--bg-alt`，也就是 #media 那一节的底色）。
+   这条类和"换图"是**同一帧**加上的（JS 第 ③ 步），所以变色和换图同时开始；
+   整格被盖着，换图看不见。过渡走完（--panel-tint）遮罩才开始往下收。
+   （类在收尾时被摘掉，颜色会自己过渡回红 —— 但那时幕已经滑到格子外面了，看不见。） */
+/* ★★ P54：「盖满那一刻」把红色换成容器底色（`--bg-alt`，令牌名是 --alt-bg 反过来）。
+   这条类和"换图"是**同一帧**加上的（JS 第 ③ 步），变色和换图同时开始，
+   整格被盖着，所以换图看不见。过渡走完（--panel-tint）幕才开始往下收。
+   （收尾摘掉这个类时颜色会自己过渡回红 —— 但那时幕已经在格子外面了，看不见。） */
+.media-panel.is-veiled .media-panel-veil {
+    background-color: var(--bg-alt);
+}
+
+/* ★★ P55：收起阶段再**写死一次**底色，并且关键帧里也写（见下面的 panelVeilOut）。
+   三层保险的道理：红色只可能来自"颜色回落到基础值"，
+   而这条规则 + 关键帧让"正在收的幕是红的"这件事从结构上不可能发生。 */
+.media-panel.is-uncovering .media-panel-veil {
+    background-color: var(--bg-alt);
+}
+
+/* 展开：整条幕从上往下滑进来，实心段铺满整格时停住。
+   ★★ P53：**延迟 lag 才起跑** —— 所以网点先动、遮罩后动，两层是并行的。
+      用 animation-delay 而不是 JS 定时器：降低动效那条全局规则会把
+      animation-duration 压到 .01ms，定时器不跟着缩，编排就错位了。
+   ★ delay 写成**独立的 longhand**、并且带 0ms 兜底：
+      万一 --panel-lag 没了，`var()` 取不到值会让整条 animation 声明
+      "计算值非法"、直接退成 animation: none（动画根本不跑，只剩兜底超时）；
+      写成独立的 animation-delay，最坏也只是"不延迟"，其余照常。 */
+.media-panel.is-covering .media-panel-veil {
+    transform: translateY(-100%);          /* 动画起跑前也别闪 */
+    animation: panelVeilIn var(--panel-cover) var(--panel-ease) forwards;
+    animation-delay: var(--panel-lag, 0ms);
+    /* ↑ 延迟期间用的是基础样式（translateY(-100%) = 整条在格子上面），
+         所以那 lag 毫秒里遮罩是**完全看不见**的 —— 这正是要的效果：
+         网点先动，遮罩 0.2s 后才开始露头。 */
+}
+
+/* 收起：接着往下滑出去（红色从上边开始消失，一路退到底） */
+.media-panel.is-uncovering .media-panel-veil {
+    /* ★ 起态兜底：类和动画在同一帧生效，正常情况下第一帧就是动画的 from；
+       万一样式先算了一次基础样式（那是 translateY(-100%)，"全在格子上面"），
+       就会闪一下"遮罩没了"。写成"已盖满"的位置就万无一失。 */
+    transform: translateY(calc(-1 * var(--panel-feather)));
+    animation: panelVeilOut var(--panel-cover) var(--panel-ease) forwards;
+    /* ★★ P54：**等变色走完才开始收**。delay 就是 --panel-tint。
+       所以"盖满 → 红变底色 → 底色幕再滑出去"是一步一步看得见的，
+       而不是红幕一边变色一边往外滑。
+       想让它俩重叠？把这条 delay 删掉（或把 --panel-tint 设成 0ms）即可。 */
+    animation-delay: var(--panel-tint, 0ms);
+    /* ↑ 延迟期间用的还是基础样式（= 已盖满那个位置），所以幕稳稳停着，
+         只是颜色在变 —— 正是要的效果。 */
+}
+
+@keyframes panelVeilIn {
+    from {
+        transform: translateY(-100%);
+    }
+
+    to {
+        transform: translateY(calc(-1 * var(--panel-feather)));
+    }
+}
+
+@keyframes panelVeilOut {
+    from {
+        transform: translateY(calc(-1 * var(--panel-feather)));
+        /* ★ P55：颜色也写进关键帧 —— 动画的值是最"硬"的（除了 !important 谁也盖不掉），
+           所以整段收起过程里幕**不可能**变回红色。 */
+        background-color: var(--bg-alt);
+    }
+
+    /* ★ 终点是"**刚好**整条幕滑到格子下面"的那一格，而不是 translateY(100%)。
+       在 translateY 里，`100%` = 元素自身高度 = H + 2F；滑到"顶边正好落在
+       格子底边"需要 ty = H = (H + 2F) − 2F，也就是 `100% − 2 × 羽化量`。
+       写成 100% 的话，最后 (H+2F)−H = 2F 那一段（340ms 里约 60ms）屏幕上什么都没有 ——
+       红早就走完了，动画还在空跑，而 JS 正等在这个 animationend 上，
+       于是"红没了"和"网点开始回来"之间会多出一小段空白。
+       ★ 顺带一个好处：这样两段行程**一样长**（都是 H + F），
+         同一个 --panel-cover 时长下，展开和收起的速度就一致了。 */
+    to {
+        transform: translateY(calc(100% - 2 * var(--panel-feather)));
+        background-color: var(--bg-alt);
+    }
+}
+
+/* 网点：静止渐变 → 全不透明。它是并行的第一层：点下去就起跑。 */
+.media-panel.is-sweep-in .media-panel-bg {
+    animation: halftoneToSolid var(--panel-sweep) var(--panel-ease) forwards;
+}
+
+/* 网点：全不透明 → 静止渐变。**逐步镜像**上面那条 ——
+   反着播一遍才是"透明区回到它原来的位置"（静止态的透明区在 40% 以下，
+   所以只能从下往上收回来；"从上往下"说的是这个渐变本身的方向）。
+   ★ 这里把"起态"（全不透明）也写成基础声明，一举两得：
+     ① 类换上来的那一帧，万一浏览器先算了一次样式、动画还没起跑，
+        读到的就是这三个值，而不是注册属性的初始值（静止态）——
+        不然会闪一下"网点突然变淡"；
+     ② P53 之后它前面还有一段 `animation-delay`，那期间屏幕上的正是
+        这份基础声明 —— 也就是"全不透明"。所以遮罩已经开始收了，
+        网点还稳稳停在实心状态，等 lag 到了才动，接缝完全看不见。 */
+.media-panel.is-sweep-out .media-panel-bg {
+    --hl-solid: 100%;
+    --hl-end: 200%;
+    --hl-a: 1;
+    animation: halftoneFromSolid var(--panel-sweep) var(--panel-ease) forwards;
+    /* ★★★ P55：delay = **tint − sweep** —— 让网点在"幕开始收"之前就变回静止渐变。
+       为什么必须这样（这就是"变完底色突然闪回红色"的真正原因）：
+       幕盖满之后会变成 `--bg-alt`（容器底色），而幕一往下收，
+       露出来的就是幕**后面**的东西 —— 那正是**实心红网点**。
+       原来网点要等"幕开始收 + lag"才动，于是幕一动就露出一大片实心红，
+       看着就是"底色变完了，怎么突然红了"，等它慢慢淡下去又"变回底色"。
+       现在这段返回挪到了幕动之前走完。差值可能是**负数** ——
+       负的 animation-delay 是合法的：表示"这一段已经跑过一部分了"，
+       反正整个过程都藏在幕后面，看不见接缝。
+       ★ 顺带的好处：幕收起来的时候，面板已经是"新图 + 正常网点"了。 */
+    animation-delay: calc(var(--panel-tint, 0ms) - var(--panel-sweep, 0ms));
+}
+
+/* ★★ P55：换图之后，新图"由大缩小"回到常态 —— 和鼠标悬停那一族同一套手感
+   （悬停是 `.media-panel-bg` 从 `scale(1.06)` 收到 `scale(1)`，
+    曲线 `cubic-bezier(0.2, 0.9, 0.3, 1)`、0.8s；这里照搬同一套）。
+   ★ 挂在 `<img>` 上而不是 `.media-panel-bg` 上：bg 那一层已经被网点动画占着
+     （同一个元素只能有一份 `animation` 声明，会互相顶掉）；img 正好空着，
+     而且 bg 是 `overflow: hidden`，缩放会被裁在格子里。
+   ★ delay 和幕收起用的是同一个 `--panel-tint`：两边天然同步 ——
+     不管图片加载拖了多久，都是"幕一动、图就跟着缩"。 */
+.media-panel.is-uncovering .media-panel-bg img {
+    animation: panelImgZoom var(--panel-zoom) cubic-bezier(0.2, 0.9, 0.3, 1) var(--panel-tint, 0ms) both;
+}
+
+@keyframes panelImgZoom {
+    from {
+        transform: scale(var(--panel-zoom-from, 1.06));
+    }
+
+    to {
+        transform: scale(1);
+    }
+}
+
+@keyframes halftoneToSolid {
+    0% {
+        --hl-solid: 0%;
+        --hl-end: 40%;
+        --hl-a: 0.8;
+    }
+
+
+    /* 完全不透明：淡出区整段挪到盒子外面（100% ~ 200%） */
+    100% {
+        --hl-solid: 100%;
+        --hl-end: 200%;
+        --hl-a: 1;
+    }
+}
+
+@keyframes halftoneFromSolid {
+    0% {
+        --hl-solid: 100%;
+        --hl-end: 200%;
+        --hl-a: 1;
+
+    }
+
+    100% {
+        --hl-solid: 0%;
+        --hl-end: 40%;
+        --hl-a: 0.8;
+        
+    }
+}
+
+/* 遮罩盖住之后：**网点保持可见**（P52 把它从 opacity: 0 改成了 1）。
+   遮罩盖住那一段两种写法没区别（网点被红幕压着，看不见）；
+   区别在**收起那一段**：用 0 的话，面板重新露出来时是"光板一块"，
+   网点要等第 ⑤ 步才啪地冒出来；用 1 的话，露出来的就是
+   "红网点 + 新图"，然后顺势渐变回 0%~40% —— 正好接上第 ⑤ 步。
+   （这条规则留着的意义就是**别把它写回 0**。） */
+.media-panel.is-veiled .media-panel-bg::after {
+    opacity: 1;
 }
 
 /* ----- Unity 游戏区 ----- */
@@ -2669,6 +3371,32 @@ body.crosshair-measuring .ruler-read-y {
     100% { opacity: 0; }
 }
 
+/* ★★ P75：悬停游戏卡带时那条**跟着鼠标走**的回执 ——
+   复用 .cursor-toast 的观感（等宽 / 投影 / 层号 99999），
+   但它不淡出、不自己消失：鼠标在卡带上就一直跟着，离开才由 js/sidebar.js 摘掉。
+   · 位置改成 JS 写 transform（基类那套 left/top 归零），跟随只动合成器属性；
+   · 文字要能换行（作品简述比"复制成功"长得多）。 */
+.cursor-toast.is-follow {
+    left: 0;
+    top: 0;
+    animation: none;
+    opacity: 1;
+    max-width: 260px;
+    white-space: normal;
+    line-height: 1.5;
+    font-size: 11px;
+}
+
+/* ★★ P76：游乐区里的回执**去掉投影、正文用纯白**。
+   基类那两层 text-shadow 是为了"压在任意内容上都要读得清"；游乐区的舞台
+   是一整块暗面板（--navbar-bg，深浅两套主题都是暗的），不需要它 ——
+   而且在舞台中央那圈投影反而显脏。
+   ★ 字色走主题钩子 --play-toast-ink（暗色在 :root、亮色在 :root.light）。 */
+body.sidebar-open .cursor-toast {
+    color: var(--play-toast-ink, #fff);
+    text-shadow: none;
+}
+
 @media (max-width: 768px) {
 
     .ruler-marker-x,
@@ -3095,6 +3823,10 @@ body.intro-done .cursor-dot {
         animation: none !important;
     }
 
+    .play-rail::after {         /* play-railGlow —— 卡带栏左缘那条（P70 加的镜像） */
+        animation: none !important;
+    }
+
     .mosaic-tile.float {        /* tileFloat —— 马赛克方块的漂浮 */
         animation: none !important;
     }
@@ -3166,10 +3898,14 @@ body.intro-done .cursor-dot {
     }
 
     .section,
+    .section:not(#home),
     .hero {
         width: 100%;
         /* ★ 手机上是纵向长滚：必须把上面那套「一屏一格 + 宽度随内容」复位，
-           否则内容会被 100dvh 裁掉、而且滚不到 */
+           否则内容会被 100dvh 裁掉、而且滚不到。
+           ★★ P61：`.section:not(#home)` 这一项**必须带上** —— 它 (0,2,0) 比
+              `.section` (0,1,0) 更特异，不写就会被上面那条 `min-width: 1000px`
+              压过，手机上一个 390px 宽的屏里出现 1000px 宽的分区（横向溢出）。 */
         min-width: 0;
         max-height: none;
         height: auto;
@@ -3212,6 +3948,22 @@ body.intro-done .cursor-dot {
 
     .nav-links a:hover {
         transform: none;
+    }
+
+    /* ★ P93：手机上是**顶部横条**（导航栏不再是一条 75px 竖轨），
+       这一组游戏控件要跟着横过来 —— 不然三个 `width: 100%` 会在顶栏里竖着堆成一列。
+       ★★ 选择器必须带 `body.sidebar-open`：不带的 `.play-controls` 和上面那条
+          `display: none` 特异度相同 (0,1,0)、却排在后面 —— 会把"关着时藏起来"顶掉 ✗，
+          于是没开游乐区也能看见这三个键。 */
+    body.sidebar-open .play-controls {
+        display: flex;
+        gap: 8px;
+    }
+
+    body.sidebar-open .play-ctl {
+        width: auto;
+        margin-bottom: 0;
+        padding: 6px 12px;
     }
 
     /* --- 页脚取消固定 --- */
@@ -3966,4 +4718,933 @@ body.window-open .cursor-dot {
     .win-loading-bar::after {
         animation: none;
     }
+}
+
+/* ============================================================
+   9. 侧边栏：游乐区（P63）
+   ------------------------------------------------------------
+   点首页那个「玩游戏」= 离开工作区：整站向右让出 --sidebar-w，
+   游乐区铺在左边。
+
+   ★★ 为什么用 left / margin-left，而**不是** transform：
+     .page-zoom 身上挂着开屏那份 transform（@keyframes body缩放）。
+     只要在这条链上再叠一层 transform，它就会成为**所有**
+     position: fixed 子元素（刻度尺 / 参考线 / 准星 / 标题下划线 /
+     开屏那几层）的包含块 —— 整套 HUD 会集体错位，而且不报错
+     （见文件开头 .page-zoom 那两段说明）。
+     布局位移还有一个白送的好处：getBoundingClientRect 依旧准，
+     准星量出来的像素不用跟着改。
+
+   ★ 几何（只有桌面会推开，见下面的 @media）：
+       侧边栏        0            → 100vw - 75px
+       导航栏        100vw - 75px → 100vw     ← 恰好贴住屏幕右缘
+       页脚          同一列的最底部            ← 也在右缘
+       main          起点被推到 100vw          ← 整个推出视野
+     也就是说"展开后屏幕上只剩导航栏与页脚贴在右侧边缘"这句话，
+     是 --sidebar-w = 100vw - --nav-width 这一个等式算出来的。
+   ============================================================ */
+
+.play-sidebar {
+    position: fixed;
+    top: 0;
+    /* ★★ P65：关着的时候整条躲在屏幕左边外（自己的宽度 = --sidebar-w），
+       展开时 left 回到 0 —— 看起来就是被导航栏从屏幕外"拉出来"。
+       ⚠ 为什么是 left 而不是 transform：
+         它必须和"整站右移"（.navbar/.footer 也是动 left）**逐帧同进度**，
+         否则那条接缝会在过渡中途裂开一两帧。
+         transform 是合成器能单独提前跑的属性，和主线程的 left 动画
+         没有同帧保证；两边都走 left 就一定是同一个时钟。 */
+    left: calc(-1 * var(--sidebar-w));
+    width: var(--sidebar-w);
+    height: 100vh;
+    height: 100dvh;
+    /* ★★ P65：游乐区在**0 层**（你指定的）。
+       它不再是"压过全站"的那一层，而是一块铺在最底下的场地 ——
+       于是所有 z-index > 0 的东西都会从它上面经过：
+       刻度尺（9996）、三角/读数（9996+）、准星（9997）、网点（10000）。
+       代价与配套：**必须**把左侧刻度尺、下方刻度尺移出屏幕
+       （见本节末尾"刻度尺整套退场"），否则它们会横在游乐区上。
+       自检 [2q] 把这条因果钉住了：z-index 是 0 就必须有那两个位移。 */
+    z-index: 0;
+
+    display: flex;
+    flex-direction: row;          /* 左：卡带栏（与导航栏同宽）  右：顶栏 + 舞台 */
+    /* padding 全部下放给这两列 —— 卡带栏要贴满屏幕左边那一条 */
+
+    /* ★★ P72：面板底色**下放到两列**（.play-rail / .play-main），这里不画。
+       为什么必须挪：box-shadow 画在元素**自己的背景后面** ——
+         导航栏有 0.55 黑的面板，它那圈光晕的内半边被自己压暗成 ≈#681919；
+         卡带栏原本没有背景，同一圈光晕原样透出来 ≈#E13232 —— 两侧观感差一档。
+       把底色挂到卡带栏身上，它的内侧就变成和导航栏同一种构造；
+       但**不能**在这里再留一层（半透明会叠成 0.55 之上再 0.55 ≈ 0.80 黑，
+       两列会比导航栏明显更暗）。所以这一层直接去掉，由两列各自铺满。 */
+    border-right: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+
+    /* ★★ P65：从屏幕左外滑进来，像被导航栏"拉出来"。
+       ★ 它和"整站右移"用同一个 --sidebar-dur + --panel-ease、也**同样动 left**，
+         所以两者的进度逐帧相同：侧边栏右缘 = p·--sidebar-w，
+         导航栏左缘 = p·--sidebar-w —— 那一整块是**刚性**的。 */
+    /* 关闭态：连 visibility 一起收掉 —— 里面的按钮因此不可聚焦，
+       也不用再拿 aria-hidden 打补丁（visibility: hidden 本身就出了无障碍树）。
+       visibility 延迟到滑回去结束再切，否则会当场消失、看不到过程。 */
+    visibility: hidden;
+    transition:
+        left var(--sidebar-dur) var(--panel-ease),
+        visibility 0s linear var(--sidebar-dur);
+}
+
+body.sidebar-open .play-sidebar {
+    visibility: visible;
+    left: 0;
+    transition:
+        left var(--sidebar-dur) var(--panel-ease),
+        visibility 0s;
+}
+
+/* ----- 卡带栏：贴在最左边，与导航栏同宽 -----
+   它和屏幕最右边的导航栏正好镜像：一边挑游戏，一边是站点本身。
+   ★ 顶部对齐线也用同一个 --v-inset（导航栏那条注释写着"logo 与正文首行
+     共用 --v-inset"）—— 于是第一张卡带的顶端、导航栏的 logo、正文首行
+     落在同一条水平线上。 */
+.play-rail {
+    position: relative;      /* ★ P70：给下面那条 ::after 当定位祖先（原来靠 .play-sidebar 兜着） */
+    flex: 0 0 var(--nav-width);
+    width: var(--nav-width);
+    height: 100%;
+    /* ★ 顶部对齐线：logo 与正文首行共用 --v-inset（数字时钟已移除） */
+    padding: calc(var(--v-inset) + var(--nudge-logo)) var(--nav-pad);
+    /* ★★ P72：和导航栏**同一层底色**（同一个 --navbar-bg 钩子 ——
+       浅色主题在 :root.light 里把它改成 0.65，所以深浅两套都自动一致）。
+       ★ 为什么它必须有背景：box-shadow 画在元素**自己的背景后面** ——
+         有这层半透明黑，光晕的内半边才会像导航栏那样被压暗；
+         没有它，那半圈就是亮红（P71 你看到的两侧差别就是这个）。
+       自检 [2p] 会把它和 .navbar 的 background 逐字比对。 */
+    background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+
+    /* ★★ P70：和 .navbar **逐字相同**的两层外阴影。
+       0 0 就是不偏移 —— 光晕往两侧都散：
+         · 导航栏在屏幕最右 → 它那圈光往左落在游乐区右缘（你看到的就是它）；
+         · 卡带栏在游乐区最左 → 同一圈光往右落在舞台上（方向相反的那一份）。
+       ⚠ 这两行必须和 .navbar 那条保持一致，自检 [2p] 会归一化空白后逐字比对。 */
+    box-shadow:
+        0 0 8px var(--border),
+        0 0 20px var(--border-shadow);
+
+    /* ★★ P74：这里曾经有一行 `z-index: -10`（你为了看清"两侧阴影为什么不一样"
+       加的临时手段，实测它确实让卡带栏外阴影和被压暗的导航栏外阴影对上了）。
+       根因已经找到并修好了：`js/main.js` 的开屏补间带 fill: forwards 却没取消，
+       `.page-zoom` 因此一直是个层叠上下文，游戏区整体压在整站之上、
+       把导航栏的外阴影盖住了 —— 所以当时"把卡带栏也压到舞台背景下面"能对上。
+       修完之后：卡带栏必须回到 `z-index: auto`（不动 z-index），
+       这样它和导航栏一样是"里面被自己那层背景压暗、外面亮"，
+       两侧才是真的对称。这一行留着反而会只压暗卡带栏一侧。 */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;       /* 滚动条会吃掉 75px 里的一条，藏掉（main 同款做法） */
+}
+
+.play-rail::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(180deg,
+            transparent,
+            rgba(225, 25, 25, 0.8),
+            transparent);
+    animation: play-railGlow 3s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes play-railGlow {
+
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.play-rail::-webkit-scrollbar {
+    width: 0;
+}
+
+.play-carts {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* 一张卡带：编号在上，名字**竖排**在下面 ——
+   75px 宽横着放不下 "Boom Shooting"，竖排正好是卡带/书脊那个样子
+   （竖排这个写法站里已经有先例：.df-v） */
+.play-cart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 112px;
+    padding: 10px 0 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: inherit;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+    /* ★★ P80：卡带是自己实现的指针拖拽，所以要拦住浏览器对这块区域的
+       手势接管（触屏上不写它，拖动会被当成滚动而中途 cancel）。
+       代价：在这张卡带上不能拖着滚动 —— 卡带栏现在只有两张，无所谓。 */
+    touch-action: none;
+}
+
+/* ★★ P80：这里**不再需要**恢复 `-webkit-user-drag`。
+   P79 为了原生拖放开过它，但原生拖放在这套环境下就是不启动（见 js/sidebar.js
+   里那段说明）—— 现在拖动是**自己实现的指针拖拽**，跟这个属性无关；
+   而开头那条 `-webkit-user-drag: none` + `user-select: none` 反而正好：
+   拖的时候不会顺手把卡带的字选蓝、也不会冒出系统的拖拽影子。 */
+
+.play-cart:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.06);
+}
+
+/* 选中的那一张（JS 写 aria-pressed）—— 和 .theme-toggle:hover 同一套红 */
+.play-cart[aria-pressed="true"] {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.08);
+}
+
+.play-cart-no {
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+}
+
+.play-cart-name {
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    font-size: 0.66rem;
+    letter-spacing: 0.16em;
+    color: var(--text);
+}
+
+/* ----- 右列：顶栏 + 舞台 ----- */
+.play-main {
+    flex: 1 1 auto;
+    min-width: 0;                /* flex 子项默认 min-width: auto —— 不给 0 会被内容顶宽 */
+    display: flex;
+    flex-direction: column;
+    gap: var(--sidebar-pad);
+    padding: calc(var(--v-inset) + var(--nudge-logo)) var(--sidebar-pad) var(--sidebar-pad);
+    /* ★★ P72：面板底色的另一半（另一半在 .play-rail 上，见那一段的说明）。
+       两列各铺一次 = 面板还是原来那个颜色；.play-sidebar 自己不再画，
+       否则半透明会叠两层、比导航栏暗。 */
+    background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
+}
+
+/* ----- 顶栏：编号 + 标题 + 关闭（和浮窗 .win-bar 同一套语言） ----- */
+.play-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+}
+
+.play-no {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+}
+
+.play-title {
+    font-size: clamp(22px, 2.2vw, 34px);
+    font-weight: 700;
+    color: var(--text);
+}
+
+.play-close {
+    margin-left: auto;              /* 顶到这一行的右端 */
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.85rem;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.play-close:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.06);
+}
+
+/* ----- 舞台：[data-play="body"]，游戏挂这里 -----
+   三种状态（js/sidebar.js 切 data-state）：
+     empty = 还没选卡带 → 只显示 .play-hint 那句提示；
+     game  = 选了卡带   → 只显示 .play-spec（规格 + 「开始游戏」）；
+     play  = 已经开始   → .play-stage 里的 iframe 铺满，上面盖一层载入提示。 */
+.play-body {
+    position: relative;          /* ★ P81：给 .play-stage 里那层 iframe 当定位祖先 */
+    flex: 1 1 auto;
+    /* ★ flex 子项默认 min-height: auto —— 不给 0 的话它会被内容顶高，
+       把 100dvh 撑破（Unity 画布一起来就会看到这个坑） */
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--panel-line);
+    overflow: hidden;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+/* ★★ P78：从卡带栏往舞台上拖时的"可以放"提示 ——
+   is-dragging = 有卡带正在被拖（虚线：这里能放）；
+   is-drop     = 指针正压在舞台上（实线 + 一点点主题红）。 */
+.play-body.is-dragging {
+    border-style: dashed;
+    border-color: var(--border);
+}
+
+.play-body.is-drop {
+    border-style: solid;
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.06);
+}
+
+/* ★★ P80：拖动时跟着指针的那张"浮起卡带"（克隆出来的那张，见 js/sidebar.js）。
+   它不参与布局、也不吃事件 —— 只是给眼睛一个"手上拿着一盒卡带"的反馈。
+   ★ 跟随只写 transform（合成器属性）：拖动过程中不读布局、不重排。 */
+.play-cart.is-ghost {
+    position: fixed;
+    left: 0;
+    top: 0;
+    margin: 0;
+    z-index: 99999;                  /* 和回执同级：拖动时也不该被谁压住 */
+    pointer-events: none;
+    opacity: 0.85;
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
+}
+
+/* 默认那句提示（P75）：「从左侧卡带栏拖动游戏到此处启动游戏」。
+   ★ 这句是页面文案，改它要跑 node _dev/subset-font.js。 */
+.play-hint {
+    padding: 0 var(--sidebar-pad);
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    line-height: 1.7;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.play-body[data-state="empty"] .play-spec,
+.play-body:not([data-state="empty"]) .play-hint {
+    display: none;
+}
+
+/* ----- 游戏层（P81）：iframe 挂在这里，惰性建、关掉就清空 -----
+   ★ 平时它是个空的绝对定位盒子 —— 必须 pointer-events: none，
+     否则它会盖住 .play-spec 上那个「开始游戏」按钮，点不到。
+     只有进入 play 状态才把事件放开（交给 iframe 里的游戏）。 */
+.play-stage {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.play-body[data-state="play"] .play-stage {
+    pointer-events: auto;
+}
+
+/* ----- 游戏发来的回执（P86）：Unity postMessage 一句，这里右下角（左下角）显示一行 -----
+   ★ 定位：和 .play-stage 同一个祖先（.play-body），但排在它**后面**、
+     z-index 更高 → 稳稳盖在游戏画面上。
+   ★★ pointer-events: none —— 它绝不能挡住游戏吃鼠标（这层只是"贴在玻璃上的字"）。
+   ★★ 字体用**系统字体**，不用站里的展示字体：这段字是**运行时**从游戏来的，
+     站点无从预知里面有什么字；一旦有子集外的字，浏览器会去拉那个 3.2MB 的
+     HuXiaoBo-Full —— 为了一行回执不值得。而且"机器说的话"用系统字体反而对。
+   ★ 默认不可见（opacity 0），js 加上 .is-on 才淡入（连位移一起，和站里别的提示同语言）。 */
+.play-msg {
+    position: absolute;
+    left: var(--sidebar-pad);
+    bottom: var(--sidebar-pad);
+    z-index: 3;
+    max-width: min(58ch, 72%);
+    padding: 8px 14px;
+    border-left: 2px solid var(--accent);
+    border-radius: 4px;
+    background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--play-toast-ink, #fff);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.18s, transform 0.18s;
+}
+
+.play-msg.is-on {
+    opacity: 1;
+    transform: none;
+}
+
+/* ============================================================================
+   游戏详细页 = 一页 README（P91）
+   ----------------------------------------------------------------------------
+   开关：.play-body 上没有 .is-readme 时，这一整块**不显示**（display: none），
+   版式也保持原来的"居中的规格卡 + 开始游戏"。加上 .is-readme 之后变成
+   「紧凑顶栏（编号/名字/tags/开始游戏）+ 下面一整块可滚动的 README」。
+
+   ★★ 字体分工（用户定的）：
+       标题 / 表头 → 站里的**展示字体**（保持全站身份）
+       正文        → **系统字体**（GitHub README 本来就是系统字体，长文更好读）
+      ⇒ 所以只有 .md 里的**标题行和表头行**需要进字体子集，
+        _dev/glyph-set.js 专门扫那几行 ✓（正文的字不用管 ✓）。
+   ★ 字色用 --play-ink（面板在深浅两套主题里都是暗的，见 :root 那段说明）。
+   ★ 整块不能写 `display` 在 .play-readme 的默认态上 —— 和 .play-notice 一个道理，
+     这里的可见性是纯 class 控制的，不用 hidden 属性。
+   ============================================================================ */
+
+.play-readme {
+    display: none;
+}
+
+.play-body.is-readme {
+    /* 从"居中摆一张卡"变成"上下分栏" */
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    overflow: hidden;
+}
+
+.play-body.is-readme .play-readme {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;                    /* flex 子项默认 min-height: auto，不给 0 会被内容顶破 */
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px var(--sidebar-pad) var(--sidebar-pad);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 0.88rem;
+    line-height: 1.8;
+    color: var(--play-ink, #E1E1E1);
+}
+
+/* ----- 顶栏化：规格 + 开始游戏挤成一行 ----- */
+.play-body.is-readme .play-spec {
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px 14px;
+    padding: 0 var(--sidebar-pad) 14px;
+    border-bottom: 1px solid var(--panel-line);
+    text-align: left;
+}
+
+.play-body.is-readme .play-spec-no {
+    font-size: 0.7rem;
+    letter-spacing: 0.24em;
+}
+
+.play-body.is-readme .play-spec-name {
+    font-size: clamp(20px, 2vw, 30px);
+}
+
+.play-body.is-readme .play-spec-meta {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.play-body.is-readme .play-start {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+/* ----- README 里的块：走"仪器便签"的克制路线，不喧哗 ----- */
+.play-readme > *:first-child { margin-top: 0; }
+.play-readme > *:last-child { margin-bottom: 0; }
+
+.play-readme p { margin: 0 0 0.9em; }
+
+/* 标题走展示字体 —— ★ 必须**显式写一遍**：.play-readme 容器上是系统字体栈，
+   font-family 会继承下去，写 inherit 等于标题也用系统字体 ✗。
+   这一串和 body 上的一致（站里这套短写法已经用过）。 */
+.play-readme h1,
+.play-readme h2,
+.play-readme h3,
+.play-readme h4,
+.play-readme h5,
+.play-readme h6 {
+    margin: 1.6em 0 0.6em;
+    font-family: "HuXiaoBo", "HuXiaoBo-Full", system-ui, sans-serif;
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--play-ink, #E1E1E1);
+    letter-spacing: 0.02em;
+}
+
+.play-readme h1 {
+    font-size: 1.5rem;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--play-line);
+}
+
+.play-readme h2 {
+    font-size: 1.2rem;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid var(--play-line);
+}
+
+.play-readme h3 { font-size: 1.05rem; }
+.play-readme h4,
+.play-readme h5,
+.play-readme h6 { font-size: 0.95rem; }
+
+.play-readme a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(225, 25, 25, 0.45);
+}
+
+/* ★ 这里刻意**不写** :hover —— 站里那条规矩是"`:hover` 必须进白名单"
+   （见 _dev/check.js 的 [2i] 全量守卫）。README 的链接本来就常驻一条红色下划线，
+   再加 hover 只是锦上添花，不值得为它开一个白名单口子 ✓。
+   真要加：把 '.play-readme a:hover' 写进那份白名单，理由和 .play-close / .play-cart
+   一样（游乐区是 fixed chrome，不随 main 滚走）。 */
+
+.play-readme strong { font-weight: 700; color: #fff; }
+.play-readme em { font-style: italic; }
+.play-readme del { opacity: 0.6; }
+
+.play-readme img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    border: 1px solid var(--play-line);
+}
+
+.play-readme hr {
+    height: 1px;
+    margin: 1.6em 0;
+    border: 0;
+    background: var(--play-line);
+}
+
+.play-readme blockquote {
+    margin: 1em 0;
+    padding: 2px 0 2px 14px;
+    border-left: 2px solid var(--accent);
+    color: var(--play-ink-muted, #9aa3b2);
+}
+
+.play-readme blockquote p { margin: 0.4em 0; }
+
+.play-readme code {
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    background: var(--play-wash);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+    font-size: 0.86em;
+    color: #f0c9c9;
+}
+
+.play-readme pre.md-code {
+    margin: 1em 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    border: 1px solid var(--play-line);
+    border-left: 2px solid var(--accent);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.play-readme pre.md-code code {
+    padding: 0;
+    background: none;
+    color: var(--play-ink, #E1E1E1);
+    font-size: 0.82rem;
+    line-height: 1.7;
+    white-space: pre;
+}
+
+.play-readme ul,
+.play-readme ol { margin: 0 0 0.9em; padding-left: 1.4em; }
+.play-readme li { margin: 0.25em 0; }
+.play-readme li > ul,
+.play-readme li > ol { margin: 0.25em 0 0.25em; }
+
+.play-readme li.md-task { list-style: none; margin-left: -1.2em; }
+.play-readme li.md-task input { margin-right: 0.5em; vertical-align: 1px; }
+
+/* 表格：GitHub 那种细线 + 表头浅底 */
+.play-readme table.md-table {
+    width: 100%;
+    margin: 1em 0;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+}
+
+.play-readme table.md-table th,
+.play-readme table.md-table td {
+    padding: 6px 10px;
+    border: 1px solid var(--play-line);
+    text-align: left;
+}
+
+/* 表头也走展示字体（和标题同一档，所以**表头的字也要进子集**） */
+.play-readme table.md-table th {
+    font-family: "HuXiaoBo", "HuXiaoBo-Full", system-ui, sans-serif;
+    font-weight: 700;
+    background: var(--play-wash);
+    color: var(--play-ink, #E1E1E1);
+}
+
+.play-readme table.md-table th.md-c,
+.play-readme table.md-table td.md-c { text-align: center; }
+.play-readme table.md-table th.md-r,
+.play-readme table.md-table td.md-r { text-align: right; }
+
+/* 目录（[TOC]） */
+.play-readme ul.md-toc {
+    margin: 0 0 1.2em;
+    padding-left: 1.1em;
+    list-style: none;
+    border-left: 1px solid var(--play-line);
+}
+
+.play-readme ul.md-toc li { margin: 0.15em 0; }
+.play-readme ul.md-toc li.md-toc-l1 { font-weight: 700; }
+.play-readme ul.md-toc ul.md-toc { margin: 0.15em 0 0.15em 0.6em; }
+
+/* README 取不到时那行说明 + 载入中（都是 ASCII，不占字体子集） */
+.play-readme .md-note,
+.play-readme .md-loading {
+    color: var(--play-ink-muted, #9aa3b2);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+}
+
+.play-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #000;            /* 构建自己的底色到之前先垫黑，避免白闪 */
+}
+
+/* 载入层：盖在 iframe 上面，`load` 一到就淡掉（见 js/sidebar.js）。
+   ★ 它同时也挡住 Unity 首帧那一下白闪 —— 所以底色用面板色。 */
+.play-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
+    color: var(--text-muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.3em;
+    pointer-events: none;
+    transition: opacity 0.3s linear, visibility 0s linear 0.3s;
+}
+
+.play-body.is-loaded .play-loading {
+    opacity: 0;
+    visibility: hidden;
+}
+
+/* 「开始游戏」：点击选中的那条路也要能开（和"拖到舞台上"同一件事） */
+.play-start {
+    margin-top: 8px;
+    padding: 8px 18px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.85rem;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.play-start:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(225, 25, 25, 0.06);
+}
+
+/* 没挂载游戏之前，舞台中央显示选中那张卡带的规格
+   （名字 / 引擎与体积，全部取自 data/works.js —— 唯一数据源）。
+   以后真挂 Unity iframe 时，这一段会被 replaceChildren 换掉。 */
+.play-spec {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 0 var(--sidebar-pad);
+    text-align: center;
+}
+
+.play-spec-no {
+    font-size: 0.72rem;
+    letter-spacing: 0.3em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.play-spec-name {
+    font-size: clamp(24px, 2.4vw, 40px);
+    font-weight: 700;
+    color: var(--text);
+}
+
+.play-spec-meta {
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+/* ----- 「游玩注意」（P84）：游戏区下方的一块提示，内容来自 data/works.js -----
+   开关是 works.js 里的 noticeOn；没有它 / 关着 → 这块整块不出现。
+   ★★ 默认隐藏用的是 hidden **属性**（js 摘它）—— 所以这里**千万不能**写
+      display：author 的 display 会盖掉 UA 的 [hidden] { display: none }，
+      那块就永远藏不住了（经典坑，和 .win-zoom 那一处是同一个道理）。
+   ★ max-height + overflow-y：内容写长了不许把上面的游戏区挤没。 */
+.play-notice {
+    flex: 0 0 auto;
+    max-height: 26dvh;
+    overflow-y: auto;
+    padding: 12px 16px;
+    border: 1px solid var(--panel-line);
+    border-left: 2px solid var(--accent);
+    background: rgba(225, 25, 25, 0.05);
+}
+
+.play-notice-title {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+}
+
+.play-notice-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.play-notice-item {
+    position: relative;
+    padding-left: 14px;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: var(--text-muted);
+}
+
+.play-notice-item + .play-notice-item {
+    margin-top: 4px;
+}
+
+.play-notice-item::before {
+    content: "·";
+    position: absolute;
+    left: 2px;
+    color: var(--accent);
+}
+
+/* ----- 展开：整站右移 ----- */
+@media (min-width: 769px) {
+
+    .navbar,
+    .footer,
+    main,
+    .hero-underline {
+        transition:
+            left var(--sidebar-dur) var(--panel-ease),
+            margin-left var(--sidebar-dur) var(--panel-ease);
+    }
+
+    body.sidebar-open .navbar,
+    body.sidebar-open .footer {
+        left: var(--sidebar-w);     /* 让到屏幕右缘 */
+    }
+
+    body.sidebar-open main {
+        margin-left: 100vw;         /* 起点推出右缘之外 */
+    }
+
+    /* ★★ P71 / P74：展开时给导航栏补一条**左缘**亮线，接缝才和卡带栏那边对称。
+       为什么需要：box-shadow 画在元素边框**后面** ——
+         · 卡带栏右侧：它自己那条 `border-right` 留在光晕内侧 → 硬 1px + 8px 光晕；
+         · 导航栏左缘：它本来只有 `border-right`（贴屏幕右缘那条），左缘没有边框
+           → 那条接缝只剩柔光，观感比卡带栏那侧软一档。
+       ★ P74 修掉 `.page-zoom` 的层叠上下文问题之后，两侧的"亮/暗"关系已经完全
+         镜像（里面被自己的背景压暗、外面亮），这条线就是把最后那 1px 补齐。 */
+    body.sidebar-open .navbar {
+        border-left: 1px solid var(--border);
+    }
+
+    /* 标题下划线是 fixed 且锚在 --nav-width 上（见上面 .hero-underline）——
+       不跟着走的话它会孤零零留在游乐区上 */
+    body.sidebar-open .hero-underline {
+        left: 100vw;
+    }
+}
+
+/* ----- 打开期间：光标交还系统 + 藏掉自定义准星与圆点 -----
+   （和 body.window-open 完全同一套做法 —— 游乐区里要能正常指东西）
+   ★ P67：光标**立刻**交还。P66 那版要等自绘箭头落位才交，现在没有那枚
+     箭头了（你的系统指针本身就是自定义图形，两枚同框会出戏），不必再等。 */
+body.sidebar-open,
+body.sidebar-open * {
+    cursor: auto !important;        /* ★ 压过全局的 * { cursor: none !important } */
+}
+
+body.sidebar-open .play-close,
+body.sidebar-open .play-cart {
+    cursor: pointer !important;
+}
+
+/* ★ P78：卡带是可以拖的 —— 光标给"抓"（放在上面那条之后，同特异度所以它赢）
+   ★★ P85：必须连**卡带里面的文字**一起管。光标取的是"指针下最深的那个
+   元素"，而 `body.sidebar-open *`（0,1,1）那条 cursor: auto !important
+   正好管着 .play-cart-no / .play-cart-name 这些孩子 —— 于是移到字上就
+   变回箭头。加上 `.play-cart *` 之后，整块卡带都是"抓"。 */
+body.sidebar-open .play-cart,
+body.sidebar-open .play-cart * {
+    cursor: grab !important;
+}
+
+/* ★ P85：按住 / 拖动中 → "握住"（grab → grabbing 是桌面软件的通用配对）。
+   `:active` 管"按住还没越阈值"那一段；越了阈值之后由 body 上的
+   is-cart-dragging 接管（见下面那组，指针滑到哪儿都算）。 */
+body.sidebar-open .play-cart:active,
+body.sidebar-open .play-cart:active * {
+    cursor: grabbing !important;
+}
+
+/* ★★ P85：拖动期间整块面板都是"握住" —— 包括指针路过的关闭键 / 开始键
+   （它们的 cursor: pointer 特异度更高，所以这里要逐个点名，且写在后面）。 */
+body.is-cart-dragging,
+body.is-cart-dragging .play-close,
+body.is-cart-dragging .play-start,
+body.is-cart-dragging .play-cart,
+body.is-cart-dragging .play-cart *,
+body.is-cart-dragging * {
+    cursor: grabbing !important;
+}
+
+/* ★★ P85：拖动期间游戏层（iframe）不吃指针。
+   不关掉的话：指针滑过"正在跑的游戏"那一块时，光标归 iframe 里那份文档管
+   （父页面管不着它的 cursor），"握住"就在那一块断掉。
+   ★ 放心关：落点判定用的是 stageEl 的**矩形**（js 里的 overStage 直接读
+     getBoundingClientRect），和 pointer-events 没关系，拖上去照样能开。 */
+.play-body.is-dragging .play-stage {
+    pointer-events: none;
+}
+
+body.sidebar-open .crosshair-h,
+body.sidebar-open .crosshair-v,
+body.sidebar-open .cursor-dot {
+    opacity: 0 !important;
+}
+
+/* ----- 打开期间：刻度尺整套退场（P65）-----
+   游乐区在 0 层，刻度尺在 9996 —— 不挪走的话它们会横在游乐区上面。
+   · 左尺向左、底尺向下滑出屏幕。位移就用**它自己的尺寸**：
+     左尺 8px 宽 → translateX(-100%)；底尺 8px 高 → translateY(100%)，
+     正好刚好离屏、不多不少。想让它"飞出去"就把 100% 换成 100vw / 100vh。
+   · 三角 / 条带 / 读数（.ruler-marker-*、.ruler-band、.ruler-read）是挂在
+     准星上的挂件，位置由 js/rulers.js **每帧写 transform** —— 所以这里只能
+     动 opacity，写 transform 会被 JS 盖掉（看起来像没生效）。
+   · 缩回时这两块 canvas 会自己按原路滑回来（transition 天然反向）。 */
+#ruler-left,
+#ruler-bottom {
+    transition: transform var(--sidebar-dur) var(--panel-ease);
+}
+
+body.sidebar-open #ruler-left {
+    transform: translateX(-100%);
+}
+
+body.sidebar-open #ruler-bottom {
+    transform: translateY(100%);
+}
+
+body.sidebar-open .ruler-marker-x,
+body.sidebar-open .ruler-marker-y,
+body.sidebar-open .ruler-band,
+body.sidebar-open .ruler-read {
+    opacity: 0 !important;
+}
+
+/* ----- 小屏：不留边，整屏铺满 -----
+   手机上导航栏是顶部横条、main 是纵向长滚，没有"推开"这回事，
+   所以只管盖住（推开那几条规则全都关在 min-width: 769px 里）。 */
+@media (max-width: 768px) {
+
+    .play-sidebar {
+        width: 100vw;
+        /* ★ 手机上是 100vw 宽（不是 --sidebar-w），所以"躲在屏幕外"的距离
+           也得跟着换成 -100vw —— 否则右边会留下 75px 露在屏幕里。 */
+        left: -100vw;
+    }
+}
+
+/* ----- 降低动效：这整套就是纯位移，直接硬切 ----- */
+@media (prefers-reduced-motion: reduce) {
+
+    .play-sidebar,
+    .navbar,
+    .footer,
+    main,
+    .hero-underline,
+    #ruler-left,
+    #ruler-bottom {
+        transition: none;
+    }
+}
+
+/* ============================================================
+   P68：调整窗口大小时，把"跟着窗口走"的过渡压掉
+   ------------------------------------------------------------
+   侧边栏展开后，导航栏 / 页脚的 left 与 main 的 margin-left 都是
+   `calc(100vw - …)`：窗口一变那个值就变，而它们挂着 450ms 的过渡 ——
+   于是"跟随窗口"被演成了一段动画，拖窗口时它们永远落后半拍
+   （你看到的那个"延迟"就是这个）。
+   js/world.js 在 resize 一开始挂 `body.is-resizing`，等 layout 防抖
+   跑完（= 用户停手 120ms）再摘掉；这一条把这些过渡按掉。
+   ★ 用 !important 是故意的：这里要压的是好几条不同特异度的规则
+     （`.navbar` / `body.sidebar-open .play-sidebar` / `.df-corner` …），
+     靠源码顺序太脆，而"resize 期间不许有过渡"是个绝对要求。
+   ============================================================ */
+body.is-resizing .navbar,
+body.is-resizing .footer,
+body.is-resizing main,
+body.is-resizing .play-sidebar,
+body.is-resizing .hero-underline,
+body.is-resizing .df-corner,
+body.is-resizing #ruler-left,
+body.is-resizing #ruler-bottom {
+    transition: none !important;
 }

@@ -950,6 +950,13 @@ window.crosshairPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     document.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;                              // 只认左键
         if (document.body.classList.contains("window-open")) return;   // 浮窗里不抢
+        /* ★★ P79：按在**游戏卡带**上 = "把卡带拖到舞台上"那个手势，
+           不是框选量取。不在这里让开的话（尤其参考线开着时），
+           拖卡带会同时画出一个量取框 —— 两个拖拽手势打架。 */
+        if (e.target && e.target.closest && e.target.closest('.play-cart')) {
+            pressing = false;
+            return;
+        }
         /* ★ 新手势开始 → 上一个"待吞"作废。
            万一下一次 click 根本没来（松手在元素外），标志位就会挂在那儿、
            把**下一次**点击吞掉。在这里清掉，它就只活一个手势的寿命。 */
@@ -1056,9 +1063,16 @@ window.crosshairPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
                       —— 那正是它原来的毛病。
                    ★ 用 refusedDrag 记住"这次按下不算"，所以后面再怎么移动也不会
                      突然开始画框；想画框就松手、等页面静止、重新按。 */
+                /* ★★ P75：游乐区开着的时候，量取的**回执一律不弹** ——
+                   那条"按 G 开启参考系…"在这里没意义（参考网格是给站点版面用的），
+                   而且它会盖在舞台上。但**能力保留**：真按了 G（回头量游乐区
+                   自己的卡带 / 舞台）照样能拖框，只是不再弹这两条字。
+                   仍然走"作废这一次按下"而不是 return —— return 会跳过下面的
+                   targetFromMouse()，准星会卡在原地不动（理由同下）。 */
+                const inPlay = document.body.classList.contains("sidebar-open");
                 if (scrolling) {
                     refusedDrag = true;
-                    showToast("请等待页面静止…", e.clientX, e.clientY);
+                    if (!inPlay) showToast("请等待页面静止…", e.clientX, e.clientY);
                 } else if (!guidesOn()) {
                     /* ★★ P48：没有参考网格就没有框选。
                        ★ 同样"作废这一次按下"而不是 return —— 理由和上面完全一样：
@@ -1067,7 +1081,9 @@ window.crosshairPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
                          而不会想到要去按 G。（这是这条规则唯一的代价，
                          所以要把它说出口。） */
                     refusedDrag = true;
-                    showToast("按 G 开启参考系…", e.clientX, e.clientY);
+                    /* ★ P75：游乐区开着时不弹这条（它只会盖在舞台上）——
+                       能力保留：真按了 G 照样能拖框量游乐区自己的版面。 */
+                    if (!inPlay) showToast("按 G 开启参考系…", e.clientX, e.clientY);
                 } else {
                     beginDrag();
                 }

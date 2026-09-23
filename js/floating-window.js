@@ -373,11 +373,23 @@ window.WorkWindow = (function () {
     /* ============================================================
        触发：全站任何 [data-work] 都能开浮窗
        （用委托，不改卡片自己的结构，以后 JS 动态加的也算）
+
+       ★★ P50：**.media-panel 除外**。那四只面板的单击从 P50 起归
+       js/media-swap.js（换底图），不再开浮窗 ——
+       所以这里必须显式放行它们，否则一次点击会同时触发两件事：
+       底图扫除动画刚起头，浮窗就盖上来。
+       ★ 代价说清楚：art-model / music / games 三件作品**只有面板这一个入口**，
+         所以它们现在从首页点不开了（.card 上还留着 art-draw / fission）。
+         要给它们补入口，最省事的做法是在面板里加一个「打开 ↗」按钮 ——
+         那个按钮带 data-work，会走下面这条委托，不用改这里的逻辑。
        ============================================================ */
+    const opensWindow = (el) =>
+        !!el && !el.closest('#work-window') && !el.classList.contains('media-panel');
+
     document.addEventListener('click', function (e) {
         if (!(e.target instanceof Element)) return;
         const el = e.target.closest('[data-work]');
-        if (!el || el.closest('#work-window')) return;   // 浮窗内部的按钮自己处理
+        if (!opensWindow(el)) return;                    // 浮窗内部 / 面板：不归这里
         e.preventDefault();
         open(el.dataset.work);
     });
@@ -387,7 +399,7 @@ window.WorkWindow = (function () {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         if (!(e.target instanceof Element)) return;
         const el = e.target.closest('[data-work]');
-        if (!el || el.closest('#work-window')) return;
+        if (!opensWindow(el)) return;
         if (el.tagName === 'BUTTON' || el.tagName === 'A') return;   // 原生的自己会触发
         e.preventDefault();
         open(el.dataset.work);

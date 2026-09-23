@@ -118,50 +118,39 @@
        ★ 配置：每个容器一条
        selector 可以是任意 CSS 选择器
        opts 覆盖 DEFAULTS 里的字段
+
+       ★★ P62：目标从 `#skills` / `#projects` / `#contact` 换成了三个
+          **独立的装饰容器**（index.html 里 main 末尾的 `.deco`）——
+          装饰和内容从此分开：分区那边只剩文字，方块想放哪就放哪。
+       ★★ 同时把 `color` / `tileColor` 从 opts 里**去掉**了：这两项是
+          写成 inline style 挂在 layer 上的，而 inline style 会**盖住**
+          容器的 CSS 变量 —— 留着它们，颜色就只能回 JS 里改。
+          现在颜色全在 css/style.css 的 `.deco` 那一段
+          （`--mosaic-color` 实色带 / `--mosaic-tile-color` 方块）。
+       ★ 几何参数（gap / size / jitter / floatMax / parallax）仍然留在这里 ——
+          它们是"随机分布"，CSS 表达不了。
        ============================================================ */
     const CONFIG = [
         {
-            selector: '#skills',
+            selector: '.deco[data-deco="skills"]',
             opts: {
                 gap: 160, sizeMin: 100, sizeMax: 500, jitter: 16,
                 floatMax: 100,
             },
         },
         {
-            selector: '#projects',
+            selector: '.deco[data-deco="projects"]',
             opts: {
                 gap: 100, sizeMin: 80, sizeMax: 600, jitter: 0,
                 floatMax: 100,
-                color: 'var(--bg-alt)',
             },
         },
         {
-            selector: '#contact',
+            selector: '.deco[data-deco="contact"]',
             opts: {
                 gap: 200, sizeMin: 150, sizeMax: 600, jitter: 12,
                 floatMax: 140,
                 parallax: false,   // 这一块不做视差
-                /* ── 配色分工 ──
-                   color     = 实色带（.mosaic-layer::before，从 --band-left 铺到右边）
-                   tileColor = 方块
-                   这里两者同色（黑），所以色带与方块是连续的一整块，
-                   方块靠近分界线时会自然融进色带里。
-
-                   底色（方块之间露出来的部分）来自 #contact 的 CSS background
-                   = var(--bg-alt)，也就是 --bg-alt 那一档；
-                   色带是压在这层底色之上的不透明覆盖物。
-                   想改成「整块都是 --bg-alt、只有方块是黑的」，
-                   把下面的 color 换成 'var(--bg-alt)' 即可。
-
-                   ── 关于方块可见度（这条注释改过一次，记下正确结论）──
-                   ✓ 感知亮度差 ΔL*：黑方块在 #191919 上 = 8.76，
-                     远高于大面积色块「刚可分辨」的阈值（≈1），属「清楚」。
-                   ✗ 不要用 WCAG 对比度(1.19) 判断：那个公式带 +0.05 的
-                     环境光抬升项，是为「亮房间里读小字」设计的，
-                     量大面积深色肌理会严重低估。
-                   要留意的场景：黑位被抬高的屏幕（漏光 LCD）或强环境光下。 */
-                color: 'var(--black)',        // 实色带 = 黑，与方块同色
-                tileColor: 'var(--black)',    // 方块 = 黑
             },
         },
         // 想给更多容器加效果，就再加一条
