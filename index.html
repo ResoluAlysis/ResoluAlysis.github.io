@@ -137,10 +137,11 @@
                     </ul>
                 </nav>
 
-                <!-- ★★ P93：游乐区展开时，这一栏的按钮换成"游戏控件"。
+                <!-- ★★ P93：游乐区展开时，导航**链接**换成"游戏控件"。
                      起因：游乐区展开后导航栏被推到屏幕右边，但它的按键**还点得动** ——
                      玩着游戏手一滑就跳走了。
-                     做法：body.sidebar-open 时藏掉 logo / 导航链接 / 主题键，显示这一组 ✓；
+                     做法：body.sidebar-open 时藏掉那 4 个导航链接，显示这一组 ✓；
+                     ★ P93b（你的要求）：logo 与主题切换键**不藏**（它们不是跳走的入口）。
                      `close()` 一开头就摘掉 body.sidebar-open → 所以**收起的那一瞬间**
                      导航按钮就回来了（不用等面板滑完）✓。
                      ★ 三个键都有 aria-pressed（静音/全屏是"开关"，状态看得见 ✓）；
@@ -446,15 +447,25 @@
              aria-label 用 ASCII：中文（"游戏列表"）里有子集没收的字，
              [2b] 会报缺字，为一句无障碍标签重裁字体不划算。 -->
         <nav class="play-rail" aria-label="PLAYGROUND">
+            <!-- ★★ P98：卡带登场前先亮一下这张"标题卡"：
+                 闪烁出现 → 停 1s → 开始渐隐 → 渐隐 0.25s 之后卡带才逐个冒出来 ✓。
+                 ★ 竖排（和卡带名字同一套写法）：这条轨道只有 75px 宽，横排四个字挤不下 ✓。
+                 ★ aria-hidden：它是**过场**，亮完就没了 —— 别让读屏器把它当成列表标题 ✓。 -->
+            <p class="play-rail-title" data-play="rail-title" aria-hidden="true">游戏卡带</p>
             <ul class="play-carts" data-play="carts"></ul>
+            <!-- ★★ P103：选中框 —— 一个跟着"当前选中的那张卡带"走的方框。
+                 它是 .play-carts 的**兄弟**（不能塞进 ul 里：那不是合法子元素，
+                 而且会变成 flex 项、把卡带挤开 ✗）；位置在 JS 里按卡带的
+                 offsetLeft/Top 算（见 js/sidebar.js 的 syncCartFrame）✓。 -->
+            <span class="play-cart-frame" data-play="cart-frame" aria-hidden="true"></span>
         </nav>
 
         <div class="play-main">
-            <header class="play-bar">
+            <!-- <header class="play-bar">
                 <span class="play-no">SHEET 02</span>
                 <h2 class="play-title">游戏</h2>
                 <button type="button" class="play-close" data-play="close" aria-label="关闭">关闭</button>
-            </header>
+            </header> -->
 
             <!-- 舞台。三种状态（由 js/sidebar.js 切 data-state）：
                    · empty = 还没选卡带 → 只显示那句提示；
@@ -486,6 +497,26 @@
                      iframe 惰性建（设 src 那一刻才开始下载）、关掉就清空。 -->
                 <div class="play-stage" data-play="stage"></div>
 
+                <!-- ★★ P101：开场的黑幕（占满游戏区）。顺序：md 内容闪烁消失 →
+                     停 0.4s → 幕布渐入 → **完全不透明之后才开始载入游戏** →
+                     （有「游玩注意」就先在黑幕上闪 3s）→ 停 0.45s → 幕布渐出。
+                     ★★ 它必须是 .play-stage 的**兄弟**、不能住在里面 ——
+                        stopGame() 会 playStage.replaceChildren() 把 stage 清空，
+                        住在里面的话第一次停游戏就被连根拔掉了 ✗（这个坑是自检抓出来的）。
+                     ★ pointer-events: none：它纯粹是过场，不该吃游戏的鼠标 ✓。
+                     ★★ 它**不**加 aria-hidden —— 「游玩注意」那行字住在里面，
+                        而那是有用信息（读屏该念）；幕布本身是个空盒子，不会添噪音 ✓。 -->
+                <div class="play-curtain" data-play="curtain">
+                    <!-- ★★ P101：「游玩注意」搬到了这里 —— 黑幕上的一行字。
+                         内容还是 works.js 的 noticeOn / notice（P84 那两个字段 ✓）。
+                         时序：黑幕**完全不透明之后**闪出来 → 停 3s → 闪掉 →
+                         然后才接黑幕剩下的动画（停 0.45s → 渐出）✓。
+                         ★ role=status + aria-live：读屏会把这段念出来（它是有用信息）✓ -->
+                    <div class="play-curtain-notice" data-play="notice" role="status" aria-live="polite">
+                        <ul class="play-notice-list" data-play="notice-list"></ul>
+                    </div>
+                </div>
+
                 <!-- 游戏发来的回执（P86）：Unity 那边 postMessage 一句，这里显示一行。
                      和游戏层同一个定位祖先，但排在它后面 + 更高的 z-index → 盖在画面上。
                      ★ 文字来自**游戏运行时**，所以用 textContent 写入（永不 innerHTML），
@@ -494,17 +525,10 @@
                 <div class="play-msg" data-play="msg" role="status" aria-live="polite"></div>
             </div>
 
-            <!-- 「游玩注意」（P84）：游戏区**下方**的一块提示，默认隐藏。
-                 内容与开关都在 data/works.js 里（noticeOn / notice）——
-                  浏览器里玩这套要注意什么只有你知道，站点只负责显示。
-                 ★ 选中一张卡带就显示（不用等按「开始游戏」）：这行字就是
-                   给"还没进去之前"看的；真进去了满屏都是画面，没人回头。
-                 ★ 默认隐藏靠 hidden 属性 —— 所以 CSS 里 .play-notice
-                   **不许**写 display（写了会盖掉 UA 的 [hidden]）。 -->
-            <section class="play-notice" data-play="notice" hidden>
-                <h3 class="play-notice-title">游玩注意</h3>
-                <ul class="play-notice-list" data-play="notice-list"></ul>
-            </section>
+            <!-- 「游玩注意」原来在**这里**（游戏区下方那块，P84）——
+                 ★★ P101 起搬进了开场黑幕（.play-curtain 里那行字）：
+                 黑幕全黑时闪出来、停 3s、闪掉，然后才接黑幕剩下的动画 ✓。
+                 数据字段没动（还是 works.js 的 noticeOn / notice）✓。 -->
         </div>
     </aside>
 

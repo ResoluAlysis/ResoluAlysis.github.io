@@ -46,6 +46,15 @@
       ★★ 字体分工：**标题和表头**走站里的展示字体、**正文**走系统字体
          ⇒ 所以改 .md 的**标题/表头**文字要跑一次 node _dev/subset-font.js；
            正文随便写（系统字体，不吃子集）。自检 [2b] 会拦下漏裁的标题字 ✓。
+
+   ★★ 卡带图标（icon）—— 只有 kind: 'unity' 用得上：
+      写一个图片路径（相对站点根目录）→ 游乐区左边那张卡带上会**铺**这张图：
+      80% 透明度、上下撑满、超出卡带圆角的部分裁掉（CSS object-fit: cover）；
+      不写 / 留空 / **文件不存在** → 那张卡带就是一块**纯色**（--bg-alt，不透明）✓。
+      ★ "文件不存在"是浏览器加载失败（img.onerror）时把图摘掉判出来的 ——
+        路径写错**不会报错**，只是静默退回纯色；想确认就去游乐区看一眼那张卡带。
+      ★ 图标是**装饰**：空 alt、不进 tab 顺序、不吃指针事件
+        （卡带自己实现的拖拽不受影响，见 js/sidebar.js 的 makeCart）。
    ============================================================ */
 window.WORKS = [
 
@@ -60,6 +69,7 @@ window.WORKS = [
         year: '',
         src: '',
         cover: '',
+        icon: '',
         weight: '',
         tags: [],
         placeholder: true,
@@ -87,10 +97,11 @@ window.WORKS = [
         year: '2026',
         src: 'assets/unityGame/BoomShooting/index.html',
         cover: 'assets/images/_test.jpg',
+        icon: 'assets/images/_test.jpg',
         weight: '14.2 MB / 15 个文件',
         tags: ['Unity', 'C#', 'WebGL'],
         placeholder: true,
-        desc: '"敌人的威胁程度直接与玩家操作水平挂钩"-2D平面射击、反应力游戏...',
+        desc: 'Boom Shooting - "敌人的威胁程度直接与玩家操作水平挂钩"',
         detail: [
             '游戏玩法：',
             '移动：WASD；射击：鼠标左键',
@@ -98,6 +109,7 @@ window.WORKS = [
             '占位：技术难点 / 踩过的坑。',
             '占位：如果这不是你独立完成的，写清分工。',
         ],
+        readme: 'data/readmes/boom-shooting.md',
         /* 游玩注意：开关在 noticeOn，内容在 notice。默认关着；
            打开只需把 false 改成 true（这段文字已经写好了，先用鼠标换操作）。 */
         noticeOn: true,
@@ -118,15 +130,16 @@ window.WORKS = [
         year: '2024',
         src: 'assets/unityGame/Fission/index.html',
         cover: 'assets/images/_test.jpg',
+        icon: 'assets/images/_test.jpg',
         weight: '23.2 MB / 23 个文件',
         tags: ['Unity', 'C#', 'WebGL'],
         placeholder: true,
-        desc: '占位描述：这一套构建比 Boom Shooting 大一倍，首次载入会更慢，'
-            + '正好用来验证惰性加载有没有生效。',
+        desc: 'Fission - “经典弹幕游戏”',
         detail: [
             '占位：玩法与操作说明。',
             '占位：技术难点 / 踩过的坑。',
         ],
+        readme: 'data/readmes/fission.md',
         noticeOn: true,
         notice: [
             '该游戏使用长按鼠标右键控制角色移动，若需体验请将该网站加入“浏览器鼠标手势”白名单...',
@@ -142,6 +155,7 @@ window.WORKS = [
         year: '2025',
         src: 'assets/unityGame/SEMARLog/index.html',
         cover: 'assets/images/_test.jpg',
+        icon: 'assets/images/_test.jpg',
         weight: '暂未',
         tags: ['Unity', 'C#', 'WebGL' , 'Mirror'],
         placeholder: true,
@@ -151,7 +165,7 @@ window.WORKS = [
             '占位：玩法与操作说明。',
             '占位：技术难点 / 踩过的坑。',
         ],
-        
+        readme: 'data/readmes/semarlog.md',
         noticeOn: false,
         notice: [
             '',
@@ -168,6 +182,7 @@ window.WORKS = [
         year: '2025',
         src: 'assets/unityGame/Refactor/index.html',
         cover: 'assets/images/_test.jpg',
+        icon: 'assets/images/_test.jpg',
         weight: '暂未',
         tags: ['Unity', 'C#', 'WebGL' , 'Mirror'],
         placeholder: true,

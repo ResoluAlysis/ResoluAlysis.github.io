@@ -786,7 +786,8 @@ section('[2p] 游乐区：卡带栏 + 同款玻璃（P64）');
         /<ul class="play-carts" data-play="carts"><\/ul>/.test(html));
     ok('★★ 只认 data/works.js 里 kind === "unity" 的条目（唯一数据源）',
         /window\.WORKS \|\| \[\]/.test(jsSide) && /kind === 'unity'/.test(jsSide) &&
-        /cartsEl\.appendChild\(makeCart\(w\)\)/.test(jsSide));
+        /* ★ P97：生成时把序号也传进去（第几张 → 错开"冒出来"的先后） */
+        /cartsEl\.appendChild\(makeCart\(w, i\)\)/.test(jsSide));
 
     /* --- 竖排的名字 --- */
     ok('★ 卡带名字竖排（75px 里横排 "Boom Shooting" 必溢出；站里 .df-v 已有先例）',
@@ -799,6 +800,249 @@ section('[2p] 游乐区：卡带栏 + 同款玻璃（P64）');
         /* ★ P86：原来这条把整个文件里的 `is-on` 也一并禁了；现在 `.play-msg.is-on`
            是**可见性**状态（回执淡入），不是选中态 —— 规则收回到它本来管的"选中态"。 */
         !/is-active|is-selected/.test(codeOnly(read('js/sidebar.js'))));
+
+    /* --- ★★ P94：卡带底色不透明 + 图标层 ---
+       背景：原来 `background: transparent` —— 面板那条模糊底会透过来，而且浅色主题下
+       --text 是近黑、`--navbar-bg` 还是暗的，透过去那片字根本读不清 ✗。
+       现在底色是**不透明**的 `--bg-alt`（跟着主题走：暗 #191919 / 浅 #e5e5e5），
+       正好和卡带里的字（--text / --text-muted）配成"深底浅字 / 浅底深字"✓。 */
+    const cartBlk = firstRule('.play-cart');
+    ok('★★ P94：卡带底色是不透明的 --bg-alt（不再是 transparent）',
+        /background-color:\s*var\(--bg-alt\)/.test(cartBlk) &&
+        !/background(-color)?:\s*transparent/.test(cartBlk),
+        decl(cartBlk, 'background-color'));
+    ok('★★ P94/P103：红只**叠一层** ::after（换背景就又变半透明了 ✗），而且现在**只有悬停**有它——'
+        + '选中态那层淡红已经撤掉（改由 .play-cart-frame 那个方框表达 ✓）',
+        /\.play-cart::after\s*\{[^}]*z-index:\s*2/.test(cssNC) &&
+        /\.play-cart::after\s*\{[^}]*pointer-events:\s*none/.test(cssNC) &&
+        /\.play-cart:hover::after\s*\{\s*opacity:\s*0?\.65/.test(cssNC) &&
+        !/\[aria-pressed="true"\]::after/.test(cssNC) &&
+        /* 老的半透明底不许回潮（那两个状态里只能有 color / border-color） */
+        !/\.play-cart:hover\s*\{[^}]*background/.test(cssNC) &&
+        !/\.play-cart\[aria-pressed="true"\]\s*\{[^}]*background/.test(cssNC));
+    const iconBlk = firstRule('.play-cart-icon');
+    ok('★★ P94：图标层铺满上下边界（inset + 100%/100% + object-fit: cover）、80% 透明度、不吃指针事件',
+        /inset:\s*0/.test(iconBlk) && /width:\s*100%/.test(iconBlk) && /height:\s*100%/.test(iconBlk) &&
+        /object-fit:\s*cover/.test(iconBlk) && /opacity:\s*0?\.8/.test(iconBlk) &&
+        /z-index:\s*0/.test(iconBlk) && /pointer-events:\s*none/.test(iconBlk),
+        iconBlk.replace(/\s+/g, ' ').trim());
+    ok('★ P94：图标会被卡带的圆角裁掉（overflow: hidden），编号/名字抬到 z-index 1 压在它上面',
+        /overflow:\s*hidden/.test(cartBlk) &&
+        /\.play-cart-no,\s*\n\.play-cart-name\s*\{[^}]*z-index:\s*1/.test(cssNC));
+
+    /* --- ★★ P94：图标这条路在 JS 里怎么走（works.js 的 icon 字段） --- */
+    const cartBody = fnBody(jsSide, 'makeCart');
+    ok('★★ P94：只有 icon 是非空字符串才建 <img>（没写 / 空串 → 纯色卡带）',
+        /const iconPath = \(typeof w\.icon === ['"]string['"]\) \? w\.icon : ['"]['"];/.test(cartBody) &&
+        /if \(iconPath\) \{/.test(cartBody));
+    ok('★★ P94：加载失败（文件不存在）就把 <img> 摘掉 → 退回纯色（浏览器只有这条路判存在性）',
+        /icon\.addEventListener\(['"]error['"], function \(\) \{[\s\S]{0,90}?icon\.remove\(\);/.test(cartBody));
+    ok('★ P94：图标是装饰：空 alt + draggable=false + class="play-cart-icon"',
+        /icon\.setAttribute\(['"]alt['"], ['"]['"]\)/.test(cartBody) &&
+        /icon\.setAttribute\(['"]draggable['"], ['"]false['"]\)/.test(cartBody) &&
+        /icon\.className = ['"]play-cart-icon['"];/.test(cartBody));
+    ok('★ P94：图标在 DOM 里排在编号 / 名字**之前**（外加 CSS 的 z-index，两层保险）',
+        cartBody.indexOf('btn.appendChild(icon)') !== -1 &&
+        cartBody.indexOf('btn.appendChild(icon)') < cartBody.indexOf('btn.appendChild(no)'));
+    ok('★ P94：works.js 每条 unity 都预留了 icon 字段（字符串），文件头也写了规矩',
+        /* ★ 数条目要走 codeOnly —— 文件头那段说明里"kind: 'unity'"出现了 4 次，
+           直接对原文数会数出 9 条 unity（5 条真条目 + 4 处注释）✗；
+           而"文件头有没有写规矩"这条**故意**查原文（那是注释里的字）✓ */
+        /卡带图标（icon）/.test(worksSrc) &&
+        (codeOnly(worksSrc).match(/^\s*icon:\s*(['"])[^'"]*\1,/gm) || []).length ===
+        (codeOnly(worksSrc).match(/kind:\s*(['"])unity\1/g) || []).length,
+        (codeOnly(worksSrc).match(/^\s*icon:/gm) || []).length + ' 处 icon / ' +
+        (codeOnly(worksSrc).match(/kind:\s*(['"])unity\1/g) || []).length + ' 条 unity');
+
+    /* --- ★★ P97：卡带的登场（面板滑到位 → 逐个冒出来）--- */
+    ok('★★ P97：藏起来的选择器**限定在卡带栏内部**（.play-carts .play-cart）—— '
+        + '写成全体 .play-cart 会把"浮起那张影子"（body 上的克隆）也藏掉，等于拖空气 ✗',
+        /\.play-carts \.play-cart\s*\{[^}]*opacity:\s*0/.test(cssNC) &&
+        !/(^|\})\s*\.play-cart\s*\{[^}]*opacity:\s*0/m.test(cssNC));
+    ok('★ P97：藏着的时候不只是透明（visibility: hidden）—— 那 450ms 里点不到、也 Tab 不到',
+        /\.play-carts \.play-cart\s*\{[^}]*visibility:\s*hidden/.test(cssNC) &&
+        /\.play-carts\.is-in \.play-cart\s*\{[^}]*visibility:\s*visible/.test(cssNC));
+    const popBlk = (cssNC.match(/\.play-carts\.is-in \.play-cart\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P97：is-in 一到就演 cartPop，逐张错开（--cart-i × 90ms），而且 fill-mode: both'
+        + '（没轮到自己时保持藏着 → 才是"一个接一个冒"）',
+        /animation:\s*cartPop\s+\d+ms/.test(popBlk) &&
+        /animation-delay:\s*calc\(var\(--cart-i/.test(popBlk) &&
+        /both/.test(popBlk), popBlk.replace(/\s+/g, ' ').trim());
+    const popKf = (cssNC.match(/@keyframes cartPop\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('★★ P97：三拍就是你描述的那套 —— 0% 透明且更小 → 55% 放大超过原样 → 100% 落回原样',
+        /0%[^}]*opacity:\s*0/.test(popKf) && /0%[^}]*scale\(0?\.\d+\)/.test(popKf) &&
+        /55%[^}]*scale\(1\.\d+\)/.test(popKf) && /100%[^}]*scale\(1\)/.test(popKf),
+        popKf.replace(/\s+/g, ' ').trim().slice(0, 120));
+    ok('★ P97：降低动效时不演 —— 但**也要看得见**（只写 animation: none 会永远 opacity: 0 ✗）',
+        /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,400}?\.play-carts \.play-cart\s*\{[^}]*opacity:\s*1[^}]*visibility:\s*visible/.test(cssNC) &&
+        /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,400}?\.play-carts\.is-in \.play-cart\s*\{\s*animation:\s*none/.test(cssNC));
+
+    /* JS 那一半 */
+    const cssDur = (cssNC.match(/--sidebar-dur:\s*(\d+)ms/) || [])[1];
+    ok('★★ P97：JS 的 SLIDE_MS 与 CSS 的 --sidebar-dur 一致（' + cssDur + 'ms）—— 改一边忘另一边就会顿一下 ✗',
+        !!cssDur && new RegExp('const SLIDE_MS = ' + cssDur + ';').test(jsSide),
+        'CSS=' + cssDur + 'ms / JS=' + (/const SLIDE_MS = (\d+);/.exec(jsSide) || [])[1]);
+    ok('★★ P97/P98：等面板的 left 过渡跑完才启动过场（**只认 left** —— 面板上还挂着 visibility 那条），'
+        + '有定时器兜底；降低动效则整套过场不演、卡带直接可见',
+        /aside\.addEventListener\('transitionend', revealEnd\)/.test(jsSide) &&
+        /e\.propertyName !== 'left'/.test(jsSide) &&
+        /setTimeout\(function \(\) \{ revealEnd = null; intro\(\); \}, SLIDE_MS \+ 80\)/.test(jsSide) &&
+        /if \(reduce \|\| !aside\.addEventListener \|\| !railTitle\) \{ cartsEl\.classList\.add\('is-in'\); return; \}/.test(jsSide));
+    ok('★★ P97：开门复位时摘掉 is-in（下一轮又是空栏 → 再冒一次）；关门只取消"待演"、**不**摘 is-in'
+        + '（卡带要跟着面板一起滑走，不能在滑走途中冒出来 ✗）',
+        fnBody(jsSide, 'resetStage').indexOf("cartsEl.classList.remove('is-in');") !== -1 &&
+        fnBody(jsSide, 'close').indexOf('cancelReveal();') !== -1 &&
+        !/function close\(\)[\s\S]*?remove\('is-in'\)[\s\S]*?exitGame/.test(jsSide));
+    ok('★ P97：每张卡带把自己的序号写进 --cart-i（逐张错开靠它）',
+        /setProperty\('--cart-i', String\(i \|\| 0\)\)/.test(jsSide) &&
+        /cartsEl\.appendChild\(makeCart\(w, i\)\)/.test(jsSide));
+
+    /* --- ★★ P103：选中框（跟着当前选中的卡带走的一个方框）--- */
+    const frameCss = (cssNC.match(/\.play-cart-frame\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P103：选中框是 `.play-carts` 的**兄弟**（塞进 ul 里既不合 HTML、又会变成 flex 项'
+        + '把卡带挤开 ✗），而且是 aria-hidden 的装饰',
+        /<span class="play-cart-frame" data-play="cart-frame" aria-hidden="true"><\/span>/.test(html) &&
+        html.indexOf('class="play-cart-frame"') > html.indexOf('class="play-carts"') &&
+        html.indexOf('data-play="carts"></ul>') < html.indexOf('class="play-cart-frame"'),
+        'frame 在 ' + html.indexOf('class="play-cart-frame"') + ' / ul 在 ' +
+        html.indexOf('class="play-carts"'));
+    ok('★★ P103：颜色单开了一个变量 `--cart-frame`（你改这一处就行 —— 值是什么由你定 ✓）',
+        /--cart-frame:\s*\S/.test(cssNC) &&
+        /border:\s*1px solid var\(--cart-frame/.test(frameCss),
+        (cssNC.match(/--cart-frame:[^;]*/) || [''])[0]);
+    ok('★★ P103：框架行为 —— 绝对定位铺在卡带上方（z-index 4）、默认隐藏、不吃鼠标、'
+        + '圆角比卡带多 1px（同心）',
+        /position:\s*absolute/.test(frameCss) && /z-index:\s*4/.test(frameCss) &&
+        /opacity:\s*0/.test(frameCss) && /visibility:\s*hidden/.test(frameCss) &&
+        /pointer-events:\s*none/.test(frameCss) &&
+        /border-radius:\s*7px/.test(frameCss) && /border-radius:\s*6px/.test(cssNC));
+    ok('★★ P103：平移的缓动是 **ease-in-out**（先慢后快再慢 ✓），只动 transform；'
+        + '第一次出现用 is-placing 关掉过渡（直接摆到位，不然会从轨道左上角滑过来 ✗）',
+        /transition:\s*transform\s+\d+ms\s+ease-in-out/.test(frameCss) &&
+        /\.play-cart-frame\.is-placing\s*\{\s*transition:\s*none/.test(cssNC) &&
+        /\.play-cart-frame\.is-on\s*\{[^}]*animation:\s*cartFrameIn/.test(cssNC) &&
+        /@keyframes cartFrameIn\s*\{[\s\S]{0,400}?100%\s*\{\s*\n\s*opacity:\s*1/.test(cssNC));
+    ok('★★ P103：JS 那边 —— 位置按卡带的 offset 算（比外轮廓大 1px：位置 -1、宽高 +2）；'
+        + '已经在了就只改 transform（让 CSS 演平移 ✓）',
+        (function () {
+            const b = fnBody(jsSide, 'syncCartFrame');
+            return /const w = \(btn\.offsetWidth \|\| 0\) \+ 2;/.test(b) &&
+                /\(btn\.offsetLeft \|\| 0\) - 1\) \+ 'px, '/.test(b) &&
+                /if \(frameShown\) \{/.test(b) &&
+                /cartFrame\.classList\.add\('is-placing'\)/.test(b) &&
+                /cartFrame\.getBoundingClientRect\(\)/.test(b) &&
+                /cartFrame\.classList\.add\('is-on'\)/.test(b) &&
+                /* 没选中 → 藏起来 + 复位 frameShown（下次重新闪 ✓） */
+                /classList\.remove\('is-on'\)/.test(b) && /frameShown = false;/.test(b);
+        })(), fnBody(jsSide, 'syncCartFrame').replace(/\s+/g, ' ').slice(0, 100));
+    ok('★ P103：选中框跟着**选中**走 —— select() 里同步（点卡带 / 拖进舞台都会走它 ✓），'
+        + '开门复位（选中置空）时也同步（于是藏起来 ✓）',
+        /* ★ 断言只认代码：jsSide 是 codeOnly() 过的，注释早被剥掉了
+           （拿注释当锚点 = 假红，这个坑踩过好几次 ✓） */
+        fnBody(jsSide, 'select').indexOf('syncCartFrame();') !== -1 &&
+        fnBody(jsSide, 'resetStage').indexOf('syncCartFrame();') !== -1);
+
+    /* --- ★★ P102：卡带表面的「正在运行…／停止运行？」蒙版 --- */
+    const veilCss = (cssNC.match(/\.play-cart-veil\s*\{[^}]*\}/) || [''])[0];
+    const veilTextCss = (cssNC.match(/\.play-cart-veil-text\s*\{[^}]*\}/) || [''])[0];
+    const armCss = (cssNC.match(/\.play-cart\.is-armed \.play-cart-veil\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P102：蒙版盖在表面（绝对定位铺满 + z-index 3 —— 盖住图标 0 / 文字 1 / 红遮罩 2），'
+        + '而且不吃鼠标（点的是卡带自己）',
+        /position:\s*absolute/.test(veilCss) && /inset:\s*0/.test(veilCss) &&
+        /z-index:\s*3/.test(veilCss) && /pointer-events:\s*none/.test(veilCss) &&
+        /border-radius:\s*inherit/.test(veilCss) &&
+        /z-index:\s*2/.test(cssNC) && /z-index:\s*1/.test(cssNC));
+    ok('★★ P102：「正在运行」= **半透明黑**（rgba 带 alpha）；「停止运行？」= **完全不透明的主题红**'
+        + '（var(--accent)，不许写成 rgba ✓）',
+        /background:\s*rgba\(0,\s*0,\s*0,\s*0?\.\d+\)/.test(veilCss) &&
+        /\.play-cart\.is-running \.play-cart-veil\s*\{[^}]*visibility:\s*visible/.test(cssNC) &&
+        /background:\s*var\(--accent\)/.test(armCss) && !/rgba/.test(armCss),
+        armCss.replace(/\s+/g, ' ').trim().slice(0, 70));
+    ok('★ P102：那行字竖排（75px 轨道里横排五个字塞不下）+ 默认藏着、闪烁消失是一条 keyframes',
+        /writing-mode:\s*vertical-rl/.test(veilTextCss) && /white-space:\s*nowrap/.test(veilTextCss) &&
+        /opacity:\s*0/.test(veilCss) && /visibility:\s*hidden/.test(veilCss) &&
+        /\.play-cart\.is-veil-out \.play-cart-veil\s*\{[^}]*animation:\s*cartVeilOut/.test(cssNC) &&
+        /@keyframes cartVeilOut\s*\{[\s\S]{0,400}?100%\s*\{\s*\n\s*opacity:\s*0/.test(cssNC));
+    ok('★★ P102：闪掉那条规则必须排在 is-running / is-armed **之后**（同特异度靠源序压住 ✓）',
+        cssNC.indexOf('.play-cart.is-veil-out .play-cart-veil') >
+        cssNC.indexOf('.play-cart.is-armed .play-cart-veil'));
+    /* JS 那一半 */
+    const veilMs = parseFloat((/cartVeilOut\s+(\d+)ms/.exec(cssNC) || [])[1] || '0');
+    ok('★★ P102：JS 的 VEIL_OUT_MS 与 CSS 的 cartVeilOut 时长一致（' + veilMs + 'ms）——'
+        + '收早了会把动画打断 ✗',
+        veilMs > 0 && new RegExp('const VEIL_OUT_MS = ' + veilMs + ';').test(jsSide));
+    ok('★★ P102：每张卡带自己管自己的蒙版（paint / flick / active），模块那边只做"广播"',
+        /const veil = document\.createElement\('span'\);/.test(jsSide) &&
+        /veil\.className = 'play-cart-veil';/.test(jsSide) &&
+        /veilText\.className = 'play-cart-veil-text';/.test(jsSide) &&
+        /veil\.setAttribute\('aria-hidden', 'true'\)/.test(jsSide) &&
+        /cartVeils\.push\(\{/.test(jsSide) &&
+        /function syncCartVeils\(\)/.test(jsSide) &&
+        /function armStop\(id\)/.test(jsSide) &&
+        /* ★ 蒙版挂在名字**之后**（DOM 最后 → 压在最上面）✓ */
+        jsSide.indexOf('btn.appendChild(veil)') > jsSide.indexOf('btn.appendChild(name)'));
+    ok('★★ P102：点"正在运行"的那张 = 两段式 —— 第一下只 armStop（红+「停止运行？」），'
+        + '第二下才 stopRunningGame ✓；点别的卡带会把确认作废 ✓',
+        /if \(playingGame === w\.id\) \{[\s\S]{0,220}?stopRunningGame\(\);[\s\S]{0,120}?armStop\(w\.id\);/.test(jsSide) &&
+        /if \(armedCart && armedCart !== id\) \{[\s\S]{0,200}?syncCartVeils\(\);/.test(jsSide));
+    ok('★★ P102：停止那一拍 —— 黑幕渐入 → 全黑后 `exitGame(true)`（过场正演着，别掐自己）→'
+        + ' **直接**渐出（没有 CURTAIN_HOLD_MS 那一停）→ 收尾 ✓',
+        (function () {
+            const b = fnBody(jsSide, 'stopRunningGame');
+            const iIn = b.indexOf("classList.add('is-in')");
+            const iExit = b.indexOf('exitGame(true)');
+            const iOut = b.indexOf("classList.add('is-out')");
+            return iIn !== -1 && iExit !== -1 && iOut !== -1 && iIn < iExit && iExit < iOut &&
+                b.indexOf('CURTAIN_HOLD_MS') === -1;
+        })() &&
+        fnBody(jsSide, 'mountGame').indexOf('syncCartVeils();') !== -1 &&
+        fnBody(jsSide, 'stopGame').indexOf('syncCartVeils();') !== -1);
+
+    /* --- ★★ P98：卡带登场前那张"标题卡"（「游戏卡带」闪烁 → 渐隐 → 才轮到卡带）--- */
+    ok('★★ P98：HTML 里多了一张标题卡，排在卡带列表**之前**、且是 aria-hidden 的过场',
+        /<p class="play-rail-title" data-play="rail-title" aria-hidden="true">游戏卡带<\/p>/.test(html) &&
+        html.indexOf('class="play-rail-title"') < html.indexOf('class="play-carts"'),
+        '位置：' + html.indexOf('play-rail-title') + ' < ' + html.indexOf('play-carts'));
+    const titleBlk = (cssNC.match(/\.play-rail-title\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P98：标题卡**不占布局**（绝对定位 + inset: 0 + flex 居中）—— 否则它淡到 0 之后'
+        + '还会把卡带往下顶一截 ✗；竖排是因为这条轨道只有 75px 宽',
+        /position:\s*absolute/.test(titleBlk) && /inset:\s*0/.test(titleBlk) &&
+        /display:\s*flex/.test(titleBlk) && /writing-mode:\s*vertical-rl/.test(titleBlk) &&
+        /opacity:\s*0/.test(titleBlk) && /visibility:\s*hidden/.test(titleBlk));
+    ok('★★ P98：闪烁出现 = 一串 opacity 台阶（steps 硬切，才叫"闪"）；is-in 才亮、is-out 才渐隐',
+        /\.play-rail-title\.is-in\s*\{[^}]*animation:\s*railTitleFlicker/.test(cssNC) &&
+        /animation:\s*railTitleFlicker[\d\s\w]*steps\(1,\s*end\)/.test(cssNC) &&
+        /\.play-rail-title\.is-in\.is-out\s*\{[^}]*animation:\s*railTitleOut/.test(cssNC) &&
+        /animation:\s*railTitleOut[^;]*forwards/.test(cssNC));
+    const flickerKf = (cssNC.match(/@keyframes railTitleFlicker\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const outKf = (cssNC.match(/@keyframes railTitleOut\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('★★ P98：闪烁真的在"闪"（多个 0/1 交替的台阶），渐隐是 1 → 0',
+        (flickerKf.match(/opacity:\s*[01](\.[\d]+)?;/g) || []).length >= 5 &&
+        /0%[^}]*opacity:\s*0/.test(flickerKf) && /100%[^}]*opacity:\s*1/.test(flickerKf) &&
+        /0%[^}]*opacity:\s*1/.test(outKf) && /100%[^}]*opacity:\s*0/.test(outKf),
+        (flickerKf.match(/opacity:\s*[\d.]+/g) || []).join(' '));
+    ok('★ P98：降低动效时这张标题卡**不出现**（整套过场都不演，卡带直接可见 ✓）',
+        /@media \(prefers-reduced-motion: reduce\)[\s\S]{0,500}?\.play-rail-title[\s\S]{0,200}?visibility:\s*hidden/.test(cssNC));
+
+    /* 时序三个数 + 一个跨文件一致性检查 */
+    ok('★★ P98：三个时间点就是你定的 —— 滑完开始、亮 1s、开始渐隐后 0.25s 才让卡带冒',
+        /const TITLE_HOLD_MS = 1000;/.test(jsSide) &&
+        /const CART_AFTER_FADE_MS = 250;/.test(jsSide) &&
+        /railTitle\.classList\.add\('is-in'\)/.test(jsSide) &&
+        /railTitle\.classList\.add\('is-out'\)/.test(jsSide) &&
+        /titleTimer = setTimeout\(function \(\) \{[\s\S]{0,400}?\}, TITLE_HOLD_MS\);/.test(jsSide) &&
+        /cartTimer = setTimeout\(function \(\) \{[\s\S]{0,200}?\}, CART_AFTER_FADE_MS\);/.test(jsSide));
+    const flickerMs = parseFloat((/railTitleFlicker (\d+)ms/.exec(cssNC) || [])[1] || '0');
+    ok('★ P98：闪烁动画（' + flickerMs + 'ms）必须**短于**亮着的那 1s —— '
+        + '不然闪到一半就开始渐隐了 ✗（自检比着这两个数）',
+        flickerMs > 0 && flickerMs < 1000);
+    ok('★ P98：复位（开门）与关门都把标题卡收干净，且三个定时器一起清',
+        fnBody(jsSide, 'resetRailTitle').indexOf("classList.remove('is-in', 'is-out')") !== -1 &&
+        fnBody(jsSide, 'resetStage').indexOf('resetRailTitle();') !== -1 &&
+        fnBody(jsSide, 'close').indexOf('resetRailTitle();') !== -1 &&
+        ['revealTimer', 'titleTimer', 'cartTimer'].every(function (t) {
+            return fnBody(jsSide, 'cancelReveal').indexOf('clearTimeout(' + t + ')') !== -1;
+        }));
 
     /* --- 舞台的规格来自 works.js，一个字都不用另写 --- */
     ok('★ 舞台三行规格（编号 / 名字 / 引擎与体积）都在 HTML 里，由 JS 从 works.js 填',
@@ -1086,8 +1330,9 @@ section('[2u] 游乐区：默认提示 + 卡带悬停回执（P75）');
     ok('★ 提示取 --text-muted 并居中', /color:\s*var\(--text-muted\)/.test(hintCss) && /text-align:\s*center/.test(hintCss));
     ok('★★ 不再有"默认选中第一张"（那行 select(games[0].id) 必须删掉）',
         !/select\(games\[0\]/.test(jsSide) &&
-        /* P81：状态由"是不是正在跑这一条"决定 —— play / game 两种 */
-        /dataset\.state = \(playingGame === id\) \? 'play' : 'game'/.test(jsSide));
+        /* P81：状态由"是不是正在跑这一条"决定 —— play / game 两种
+           （★ P100b：这一段搬进了 renderSelection(w)，条件里的 id 也跟着变成 w.id ✓） */
+        /dataset\.state = \(playingGame === w\.id\) \? 'play' : 'game'/.test(jsSide));
 
     /* --- 2. 悬停回执 --- */
     ok('★★ 悬停 / 聚焦卡带会生成回执，内容取自 works.js 的 desc（唯一数据源）',
@@ -1215,18 +1460,26 @@ section('[2x] 拖卡带到舞台启动（P78/P80）');
     ok('★★ 落点在舞台上才算启动（先 select 再 startGame）；落外面作废',
         /function overEl\(el, x, y\)/.test(jsSide) &&
         /const overStage = \(x, y\) => overEl\(stageEl, x, y\);/.test(jsSide) &&
-        /if \(overStage\(e\.clientX, e\.clientY\)\) \{[\s\S]{0,120}?select\(w\.id\);[\s\S]{0,120}?startGame\(\);/.test(jsSide) &&
+        /* ★ P100b：换卡带那条路要多传两个 true（先别关上一局、先别铺新内容）✓ */
+        /if \(overStage\(e\.clientX, e\.clientY\)\) \{[\s\S]{0,700}?select\(w\.id, true, true\);[\s\S]{0,120}?startGame\(\);/.test(jsSide) &&
         /if \(!wasDrag\) return;/.test(jsSide) &&
-        /swallowClick = overEl\(btn, e\.clientX, e\.clientY\);/.test(jsSide) &&
+        /* ★ P100b：拖完一律吞掉紧跟着的那次 click —— 指针被 capture 在卡带上，
+           松手在哪都会派到这张卡带（原来"只在卡带上松手才吞"是错的 ✗） */
+        /swallowClick = true;\s*\n\s*swallowAt = Date\.now\(\);/.test(jsSide) &&
         /addEventListener\('pointerdown'[\s\S]{0,200}?swallowClick = false;/.test(jsSide));
     ok('★★ 拖动期间先把跟随回执收掉（否则它会一路贴着鼠标飞）',
         /addEventListener\('pointermove'[\s\S]{0,300}?startDrag\(e\)/.test(jsSide) &&
         /function startDrag\(e\)[\s\S]{0,200}?hideGameToast\(\);/.test(jsSide));
-    ok('★★ 跟着指针的那张"浮起卡带"：只写 transform、不吃事件、固定定位',
-        /translate\(' \+ \(x - 20\) \+ 'px, ' \+ \(y - 20\) \+ 'px\)/.test(jsSide) &&
+    ok('★★ 跟着指针的那张"浮起卡带"：只写 transform（唯一一处）、不吃事件、固定定位',
+        /function paintGhost\(\)/.test(jsSide) &&
+        /* ★ P96：写 transform 的地方**只有** paintGhost 一处 —— 位置/抬起/放大合成一次写完，
+           别处再写一句就会互相覆盖（这条比原来比对字面串结实）*/
+        (jsSide.match(/ghost\.style\.transform/g) || []).length === 1 &&
         /position:\s*fixed/.test(ghostCss) && /pointer-events:\s*none/.test(ghostCss));
     ok('★★ 拖完那一下的 click 被吃掉（否则状态会再跳一次）',
-        /if \(swallowClick\) \{ swallowClick = false; e\.preventDefault\(\); return; \}/.test(jsSide));
+        /* ★ P100b：标志位现在只吞"紧接着"那一下（带时间戳，过时的不吞）✓ */
+        /if \(swallowClick\) \{[\s\S]{0,200}?swallowClick = false;[\s\S]{0,80}?e\.preventDefault\(\); return; \}/.test(jsSide) &&
+        /swallowAt = Date\.now\(\);/.test(jsSide));
     ok('★ 拖动中按 Esc 作废', /addEventListener\('keydown'[\s\S]{0,240}?endDrag\(\);/.test(jsSide));
     ok('★ 两个状态的样式：虚线 = 可以放，实线 + 主题红 = 正压在上面',
         /border-style:\s*dashed/.test(dragCss) && /border-style:\s*solid/.test(dropCss) &&
@@ -1235,6 +1488,61 @@ section('[2x] 拖卡带到舞台启动（P78/P80）');
         /body\.sidebar-open \.play-cart,\s*\n?body\.sidebar-open \.play-cart \*\s*\{\s*\n?\s*cursor:\s*grab/.test(cssNC));
     ok('★★ 卡带上拦掉浏览器的手势接管（touch-action: none）—— 否则触屏拖动会被当成滚动取消',
         /\.play-cart\s*\{[\s\S]*?touch-action:\s*none/.test(cssNC));
+
+    /* --- ★★ P95：拖起来的那张，原位变成"空槽位"（看起来像被拿下来了）--- */
+    const takenCss = (cssNC.match(/\.play-cart\.is-taken\s*\{[^}]*\}/) || [''])[0];
+    const startBody = fnBody(jsSide, 'startDrag'), endBody = fnBody(jsSide, 'endDrag');
+    ok('★★ P95：拖动时源卡带挂 is-taken（startDrag 加、endDrag 摘 —— 三个收尾路径都走 endDrag）',
+        /btn\.classList\.add\('is-taken'\);/.test(startBody) &&
+        /btn\.classList\.remove\('is-taken'\);/.test(endBody) &&
+        /addEventListener\('pointercancel', function \(\) \{ endDrag\(\); \}\)/.test(jsSide));
+    ok('★★ P95：★ 顺序 —— 先克隆出手上那张，**再**让槽位变空（反了手上那张也是空的 ✗）',
+        startBody.indexOf('cloneNode(true)') !== -1 &&
+        startBody.indexOf('cloneNode(true)') < startBody.indexOf("btn.classList.add('is-taken')"));
+    ok('★★ P95：槽位的样子：更深的底 + 虚线的边 + 内阴影（凹进去的那点光）',
+        /background-color:\s*rgba\(0,\s*0,\s*0,\s*0?\.\d+\)/.test(takenCss) &&
+        /border-style:\s*dashed/.test(takenCss) &&
+        /border-color:\s*var\(--panel-line\)/.test(takenCss) &&
+        /box-shadow:\s*inset/.test(takenCss),
+        takenCss.replace(/\s+/g, ' ').trim().slice(0, 90));
+    ok('★★ P95：内容用 visibility 隐藏（**不是** display / 删元素）—— 尺寸不变，卡带栏不会跳',
+        /\.play-cart\.is-taken\s*>\s*\*\s*\{\s*visibility:\s*hidden/.test(cssNC) &&
+        !/\.play-cart\.is-taken[^{}]*\{[^}]*display:\s*none/.test(cssNC));
+    ok('★★ P95：空槽上不许留红遮罩（指针捕获期间残留的 :hover 会把它点亮）——靠源序压住，'
+        + '所以这条规则必须排在 :hover::after **之后**',
+        /\.play-cart\.is-taken::after\s*\{\s*opacity:\s*0/.test(cssNC) &&
+        cssNC.indexOf('.play-cart.is-taken::after') > cssNC.indexOf('.play-cart:hover::after'));
+
+    /* --- ★★ P96：拿起来的手感（延迟跟手 + 轻微上移放大）--- */
+    ok('★★ P96：延迟跟手用**和 crosshair.js 同一套公式**（k = 1 - Math.pow(1 - EASE, dt)，'
+        + 'dt 按 60fps 归一化）',
+        /const EASE_GHOST = 0\.\d+;/.test(jsSide) &&
+        /1 - Math\.pow\(1 - EASE_GHOST, dt\)/.test(jsSide) &&
+        /\(now - lastFrame\) \/ \(1000 \/ 60\)/.test(jsSide));
+    ok('★★ P96：自己开一条 rAF（**不用** World.onFrame —— 游乐区开着时 World 是 paused 的 ✗），'
+        + '而且只在拖动期间跑、松手立刻 cancel',
+        /window\.requestAnimationFrame\(ghostFrame\)/.test(jsSide) &&
+        !/World\.onFrame/.test(jsSide) &&
+        /if \(!dragging \|\| !ghost\) \{ easing = false; return; \}/.test(jsSide) &&
+        fnBody(jsSide, 'stopGhostLoop').indexOf('cancelAnimationFrame') !== -1 &&
+        fnBody(jsSide, 'endDrag').indexOf('stopGhostLoop();') !== -1);
+    ok('★★ P96：拿起来那一下 = 轻微上移 + 稍微放大（LIFT_Y / LIFT_SCALE 都进同一个 transform，'
+        + '而且走缓动推进）',
+        /const LIFT_Y = -\d+;/.test(jsSide) && /const LIFT_SCALE = 1\.\d+;/.test(jsSide) &&
+        /\(gy - holdY \+ LIFT_Y \* lift\)/.test(jsSide) &&
+        /1 \+ \(LIFT_SCALE - 1\) \* lift/.test(jsSide) &&
+        /1 - Math\.pow\(1 - EASE_LIFT, dt\)/.test(jsSide));
+    ok('★ P96：缓动起点钉在指针上（否则从上一张卡带的位置飞过来 ✗）+ 记住"抓在卡带哪个点"'
+        + '（拿起来时卡带不该在手底下跳一下）',
+        /gx = tx = e\.clientX;/.test(jsSide) && /gy = ty = e\.clientY;/.test(jsSide) &&
+        /holdX = r \? \(e\.clientX - r\.left\) : 20;/.test(jsSide) &&
+        /holdY = r \? \(e\.clientY - r\.top\) : 20;/.test(jsSide));
+    ok('★ P96：降低动效时**不演这套**（direct：moveGhost 里 easing=false 就直接到位）',
+        /prefers-reduced-motion: reduce/.test(jsSide) &&
+        /if \(!easing\) \{ gx = x; gy = y; lift = 1; paintGhost\(\); \}/.test(jsSide) &&
+        /if \(reduce\) moveGhost\(e\.clientX, e\.clientY\);/.test(jsSide));
+    ok('★ P96：浮起卡带只走合成器（will-change: transform），拖动期间不读布局',
+        /will-change:\s*transform/.test(ghostCss));
 
     ok('★★ 点过的那张：回执收起来，直到鼠标移出（clicked 闸门）',
         /let clicked = false;/.test(jsSide) &&
@@ -1299,22 +1607,29 @@ section('[2z] 开始游戏：iframe 惰性挂载 + 开门复位（P81）');
     const stageCss = (cssNC.match(/\.play-stage\s*\{[^}]*\}/) || [''])[0];
 
     ok('★★ 舞台里多了"游戏层"（.play-stage），iframe 挂它里面',
-        /<div class="play-stage" data-play="stage"><\/div>/.test(html) &&
+        /* ★ P99：stage 里现在还住着那块开场黑幕，所以不再要求"空标签" ✓ */
+        /<div class="play-stage" data-play="stage">[\s\S]{0,600}?<\/div>/.test(html) &&
+        /<div class="play-curtain" data-play="curtain"/.test(html) &&
         /const playStage = aside\.querySelector\('\[data-play="stage"\]'\)/.test(jsSide));
     /* ★ 原来这里用一个 1200 字的窗口去"框住" frame.src 那行 —— 后来 startGame 里
        多挂了几件事（guardDoc / hookConsole / registerAudio）就框不住了 ✗。
        改成断言**不变量**：全文件只有一处给 frame 设 src、而且取自 w.src ✓
-       （引号也不挑：格式化器会把 ' 换成 " ✓）。 */
-    ok('★★ 惰性：只有 startGame() 才设 src，而且 src 取自 works.js（没有写死的路径）',
+       （引号也不挑：格式化器会把 ' 换成 " ✓）。★ P99：那段搬进了 mountGame() ——
+       载入游戏这件事现在只在"幕布全黑"那一刻发生 ✓ */
+    ok('★★ 惰性：只有真的挂载（mountGame）才设 src，而且 src 取自 works.js（没有写死的路径）',
         (jsSide.match(/frame\.src = w\.src;/g) || []).length === 1 &&
-        /function startGame\(\)[\s\S]*?frame\.src = w\.src;/.test(jsSide) &&
+        fnBody(jsSide, 'mountGame').indexOf('frame.src = w.src;') !== -1 &&
+        fnBody(jsSide, 'startGame').indexOf('frame.src') === -1 &&
         !/\.src = ['"]assets\//.test(jsSide));
     ok('★★ 卸载时机：换游戏 / 关门都 replaceChildren（WebGL 上下文很贵）',
         fnBody(jsSide, 'stopGame').indexOf('replaceChildren()') !== -1 &&
-        /if \(playingGame && playingGame !== id\) stopGame\(\);/.test(jsSide) &&
-        /* P82：关门那条改走 exitGame()（= stopGame + 退回详情页） */
+        /* ★ P100：换卡带那条路（拖到舞台上）要多传 keepRunning=true，先别关上一局 ✓ */
+        /if \(!keepRunning && playingGame && playingGame !== id\) stopGame\(\);/.test(jsSide) &&
+        /* ★ P82：关门那条改走 exitGame()（= stopGame + 退回详情页）
+           ★ P102：exitGame 现在带 keepIntro 参数（"点卡带停止运行"那一拍要在黑幕
+             全黑时收掉本局，不能把过场掐掉 ✓） */
         /closing = true;[\s\S]{0,120}?exitGame\(\);/.test(jsSide) &&
-        /function exitGame\(\)[\s\S]{0,160}?stopGame\(\);/.test(jsSide));
+        /function exitGame\(keepIntro\)[\s\S]{0,160}?stopGame\(keepIntro\);/.test(jsSide));
     /* ★ 引号不挑：格式化器会把 ' 换成 "，断言只该管行为 ✓（下面几处同理） */
     ok('★★ 载入层：iframe 的 load 一到就加 is-loaded，CSS 里淡掉',
         /addEventListener\(['"]load['"], function \(\)[\s\S]{0,200}?classList\.add\(['"]is-loaded['"]\)/.test(jsSide) &&
@@ -1324,6 +1639,112 @@ section('[2z] 开始游戏：iframe 惰性挂载 + 开门复位（P81）');
     ok('★★ 游戏层平时不吃事件（否则盖住「开始游戏」按钮），进 play 才放开',
         /pointer-events:\s*none/.test(stageCss) &&
         /\[data-state="play"\] \.play-stage\s*\{[^}]*pointer-events:\s*auto/.test(cssNC));
+
+    /* --- ★★ P99：开场三拍（md 闪没 → 黑幕 → 载入 → 渐出）--- */
+    const curtainCss = (cssNC.match(/\.play-curtain\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P99：黑幕是 .play-stage 的**兄弟**（不是子元素）—— 住在里面会被 stopGame 的'
+        + ' replaceChildren() 连根拔掉 ✗',
+        html.indexOf('class="play-curtain"') > html.indexOf('class="play-stage"') &&
+        html.indexOf('class="play-curtain"') < html.indexOf('class="play-msg"'));
+    ok('★★ P99：黑幕占满游戏区、纯黑、不吃鼠标，而且只盖住游戏层（z-index 2 < 回执的 3）',
+        /position:\s*absolute/.test(curtainCss) && /inset:\s*0/.test(curtainCss) &&
+        /background:\s*#000/.test(curtainCss) &&
+        /pointer-events:\s*none/.test(curtainCss) &&
+        /z-index:\s*2/.test(curtainCss) &&
+        /\.play-msg\s*\{[^}]*z-index:\s*3/.test(cssNC) &&
+        /opacity:\s*0/.test(curtainCss) && /visibility:\s*hidden/.test(curtainCss));
+    ok('★★ P99：渐入 / 渐出是两条 keyframes（is-in → is-out），时长和 JS 的常数对得上',
+        /\.play-curtain\.is-in\s*\{[^}]*animation:\s*playCurtainIn\s+(\d+)ms[^;]*forwards/.test(cssNC) &&
+        /\.play-curtain\.is-in\.is-out\s*\{[^}]*animation:\s*playCurtainOut\s+(\d+)ms[^;]*forwards/.test(cssNC) &&
+        /@keyframes playCurtainIn\s*\{[\s\S]{0,200}?opacity:\s*1/.test(cssNC) &&
+        /@keyframes playCurtainOut\s*\{[\s\S]{0,200}?opacity:\s*0/.test(cssNC));
+    ok('★★ P99：第一拍"md 内容闪烁消失"= .play-body.is-starting 下的台阶动画（250ms 硬切 + forwards）',
+        /\.play-body\.is-starting \.play-readme,\s*\n\.play-body\.is-starting \.play-spec\s*\{\s*\n\s*animation:\s*playMdOut\s+250ms\s+steps\(1,\s*end\)\s+forwards/.test(cssNC) &&
+        /@keyframes playMdOut\s*\{[\s\S]{0,400}?100%\s*\{\s*\n\s*opacity:\s*0/.test(cssNC));
+    /* 三处跨文件时长 —— 改 CSS 忘了改 JS（或反过来）就会"某一拍对不上" ✗ */
+    const durOf = function (re) { return parseFloat((re.exec(cssNC) || [])[1] || '0'); };
+    const inMs = durOf(/playCurtainIn\s+(\d+)ms/), outMs = durOf(/playCurtainOut\s+(\d+)ms/);
+    const mdMs = durOf(/playMdOut\s+(\d+)ms/);
+    ok('★★ P99：CSS 的三个时长与 JS 的常数逐个相等（幕布渐入 ' + inMs + ' / 渐出 ' + outMs +
+        ' / md 闪没 ' + mdMs + '）',
+        inMs > 0 && outMs > 0 && mdMs > 0 &&
+        new RegExp('const CURTAIN_IN_MS = ' + inMs + ';').test(jsSide) &&
+        new RegExp('const CURTAIN_OUT_MS = ' + outMs + ';').test(jsSide) &&
+        new RegExp('const MD_OUT_MS = ' + mdMs + ';').test(jsSide) &&
+        /const CURTAIN_HOLD_MS = 450;/.test(jsSide));
+    ok('★★ P99/P100/P101：时序串在 startGame 里 —— md 闪没 →（停 0.4s）幕布渐入 →（250ms）'
+        + '**这时才 mountGame** →（有注意就先闪 3s）→ 再走"剩下的动画"（450ms 停 → 渐出 → 收尾）；'
+        + '而且 startGame 自己**不建 iframe**',
+        (function () {
+            const b = fnBody(jsSide, 'startGame');
+            const iSwap = b.indexOf('if (swapping) { curtainIn(); return; }');
+            const iStart = b.indexOf("classList.add('is-starting')");
+            const iHold = b.indexOf('setTimeout(curtainIn, MD_HOLD_MS)');
+            const iFn = b.indexOf('curtainIn = function');
+            const iAddIn = b.indexOf("classList.add('is-in')");
+            const iMount = b.lastIndexOf('mountGame(w)');   // ★ 最后那一处 —— 前面那个是降级分支 ✓
+            const iNotice = b.indexOf("noticeEl.classList.add('is-on')");
+            const iAfterNotice = b.indexOf('setTimeout(curtainRest, NOTICE_OUT_MS)');
+            const iRestCall = b.indexOf('curtainRest();', iMount);
+            /* 「剩下的动画」那一段（curtainRest）自己的顺序：先渐出 → 再收尾 ✓ */
+            const restBody = b.slice(b.indexOf('curtainRest = function'),
+                b.indexOf('curtainIn = function'));
+            return iFn !== -1 && iSwap !== -1 && iSwap < iStart && iStart < iHold &&
+                iAddIn > iFn && iAddIn < iMount && iMount < iMount + 1 &&
+                iNotice > iMount && iNotice < iAfterNotice && iRestCall > iAfterNotice &&
+                restBody.indexOf("classList.add('is-out')") !== -1 &&
+                restBody.indexOf("classList.add('is-out')") < restBody.indexOf('cancelIntro();') &&
+                b.indexOf('createElement') === -1;
+        })(), fnBody(jsSide, 'startGame').replace(/\s+/g, ' ').slice(0, 120));
+    ok('★★ P100/P104：正在跑游戏时拖入新卡带（或空卡带）→ **直接**渐入黑幕（不闪 md、不停 0.4s），'
+        + '全黑那一刻才关上一局（exitGame(true) = 关掉 + 退回详情页，keepIntro 保住正在演的过场）',
+        /const swapping = !!playingGame;/.test(jsSide) &&
+        /const playable = hasPlayableSrc\(w\);/.test(jsSide) &&
+        /if \(playable && playingGame === w\.id\) return;/.test(jsSide) &&
+        /if \(swapping\) \{ curtainIn\(\); return; \}/.test(jsSide) &&
+        /if \(swapping\) exitGame\(true\);/.test(jsSide) &&
+        /if \(playable\) mountGame\(w\);/.test(jsSide) &&
+        /function stopGame\(keepIntro\)/.test(jsSide) &&
+        /if \(!keepIntro\) cancelIntro\(\);/.test(jsSide) &&
+        /const MD_HOLD_MS = 400;/.test(jsSide));
+    /* ★★ P100b：拖到舞台上时"内容先别换"—— 屏幕上那份 md 保持上一个卡带的 ✓ */
+    ok('★★ P100b：拖到舞台上时内容**先不铺**（deferContent）—— 选中态立刻更新，'
+        + '但 md/规格/注意留到全黑那一刻才换（你要的"保持上一个内容"✓）',
+        /function select\(id, keepRunning, deferContent\)/.test(jsSide) &&
+        /if \(deferContent\) \{ deferredCart = id; return; \}/.test(jsSide) &&
+        /function renderSelection\(w\)/.test(jsSide) &&
+        /function applyDeferred\(\)/.test(jsSide) &&
+        /deferredCart = null;\s*\n\s*renderSelection\(w\);/.test(jsSide) &&
+        /* 全黑那一刻补上，且顺序是"补内容 → 挂游戏" ✓ */
+        (function () {
+            const b = fnBody(jsSide, 'startGame');
+            return b.indexOf('applyDeferred();') !== -1 &&
+                b.indexOf('applyDeferred();') < b.lastIndexOf('mountGame(w)');
+        })() &&
+        /* ★★ 没在跑时那句 stopGame 也必须传 true —— 否则它的 cancelIntro→applyDeferred
+           会把"待铺的内容"提前铺出来（你报的第一件事就回来了 ✗）
+           ★ P104：空卡带那条路上，stopGame 只在"能玩"时才喊（没准要演的）✓ */
+        /if \(!swapping && playable\) stopGame\(true\);/.test(jsSide) &&
+        /* ★ P104：空卡带 + 没在跑游戏 → 不演黑幕，直接铺详情页 ✓ */
+        /if \(!playable\) \{ applyDeferred\(\); return; \}/.test(jsSide) &&
+        /function clearIntro\(\)/.test(jsSide) &&
+        fnBody(jsSide, 'cancelIntro').indexOf('applyDeferred();') !== -1);
+    ok('★★ P100b：拖完那一下的 click 一律吞掉，但只吞"紧跟着"的（带时间戳）——'
+        + '拖到卡带外面松手也一样会派发 click（指针被 capture 在卡带上）',
+        /let swallowAt = 0;/.test(jsSide) &&
+        /swallowClick = true;\s*\n\s*swallowAt = Date\.now\(\);/.test(jsSide) &&
+        /const fresh = Date\.now\(\) - swallowAt < 500;/.test(jsSide) &&
+        /if \(fresh\) \{ e\.preventDefault\(\); return; \}/.test(jsSide));
+    ok('★ P99/P100：降级（降低动效 / 没有舞台或幕布）→ 不演，直接载入（待铺内容同时补上）；'
+        + '停游戏 / 复位时过场收干净',
+        /if \(reduce \|\| !stageEl \|\| !curtainEl\) \{[\s\S]{0,160}?mountGame\(w\);/.test(jsSide) &&
+        /if \(reduce \|\| !stageEl \|\| !curtainEl\) \{[\s\S]{0,160}?applyDeferred\(\);/.test(jsSide) &&
+        fnBody(jsSide, 'stopGame').indexOf('cancelIntro();') !== -1 &&
+        /* ★ P100b：清类那几行搬进了 clearIntro（cancelIntro = clearIntro + 补上待铺内容）✓ */
+        fnBody(jsSide, 'clearIntro').indexOf("classList.remove('is-starting')") !== -1 &&
+        fnBody(jsSide, 'clearIntro').indexOf("classList.remove('is-in', 'is-out')") !== -1 &&
+        fnBody(jsSide, 'cancelIntro').indexOf('clearIntro();') !== -1 &&
+        fnBody(jsSide, 'cancelIntro').indexOf('applyDeferred();') !== -1);
     ok('★★ 开门时复位：选中置空 + 状态回 empty + 卡带按下态清掉 + 回执收掉',
         /function resetStage\(\)[\s\S]{0,520}?dataset\.state = 'empty'/.test(jsSide) &&
         /function open\(from\)[\s\S]{0,420}?resetStage\(\);/.test(jsSide) &&
@@ -1345,7 +1766,7 @@ section('[2z] 开始游戏：iframe 惰性挂载 + 开门复位（P81）');
     ok('★★ 只认当前那个 iframe 发来的消息（比对 e.source，别被别的窗口骗了）',
         /e\.source !== frame\.contentWindow\) return;/.test(jsSide));
     ok('★ 退出 = 卸 iframe + 退回详情页（不是留一个空舞台）',
-        /function exitGame\(\)[\s\S]{0,160}?stopGame\(\);[\s\S]{0,160}?dataset\.state = 'game'/.test(jsSide));
+        /function exitGame\(keepIntro\)[\s\S]{0,160}?stopGame\(keepIntro\);[\s\S]{0,160}?dataset\.state = 'game'/.test(jsSide));
 })();
 
 section('[2aa] 把浏览器抢走的键盘 / 右键还给游戏（P83）');
@@ -1396,30 +1817,80 @@ section('[2aa] 把浏览器抢走的键盘 / 右键还给游戏（P83）');
 })();
 
 /* ============================================================
-   2ab. 「游玩注意」：游戏区下方那块提示（P84）
+   2ab. 「游玩注意」：黑幕上那行字（P84 → P101 搬家）
+   ------------------------------------------------------------
+   P84 时它是**游戏区下方**的一块提示；P101 起搬进了开场黑幕：
+   黑幕完全不透明之后闪出来、停 3s、闪掉，然后才接黑幕剩下的动画 ✓。
+   数据字段没动（works.js 的 noticeOn / notice）✓。
    ============================================================ */
-section('[2ab] 游玩注意：开关 + 内容都在 works.js（P84）');
+section('[2ab] 游玩注意：黑幕上的那行字（P84 → P101）');
 (function noticeBlock() {
     const jsSide = codeOnly(read('js/sidebar.js'));
-    const cssNotice = (cssNC.match(/\.play-notice\s*\{[^}]*\}/) || [''])[0];
+    const curtainCss = (cssNC.match(/\.play-curtain\s*\{[^}]*\}/) || [''])[0];
+    const noticeCss = (cssNC.match(/\.play-curtain-notice\s*\{[^}]*\}/) || [''])[0];
 
-    ok('★★ 游戏区**下方**有一块 .play-notice，而且默认是 hidden',
-        /<section class="play-notice" data-play="notice" hidden>/.test(html) &&
-        html.indexOf('data-play="stage"') < html.indexOf('data-play="notice"'));
-    ok('★ 标题 + 一列容器（内容由 JS 按 works.js 渲染，不写死在 HTML 里）',
-        /data-play="notice-list"/.test(html) && /class="play-notice-title"/.test(html));
-    /* ★★ 这条是踩过的坑：给隐藏元素写了 display，author 就会盖掉 UA 的
-       [hidden] { display: none }，那块永远藏不住。 */
-    ok('★★ 默认隐藏用 hidden 属性，CSS 里**不许**给 .play-notice 写 display',
-        cssNotice.length > 0 && !/display\s*:/.test(cssNotice));
-    ok('★ 内容长了不许把游戏区挤没（max-height + overflow-y）',
-        /max-height:\s*[\d.]+dvh/.test(cssNotice) && /overflow-y:\s*auto/.test(cssNotice));
-    ok('★ 开关与内容都是 works.js 的字段：noticeOn + notice',
-        /if \(typeof lines === 'string'\) lines = lines\.split\('\\n'\)/.test(jsSide) &&
-        /let lines = \(w && w\.noticeOn\) \? w\.notice : null;/.test(jsSide));
-    ok('★★ 选中卡带就渲染（不必等按开始），复位时收掉',
+    ok('★★ P101：提示搬进了开场黑幕（.play-curtain 里），游戏区下方那块已经没了',
+        html.indexOf('class="play-curtain"') < html.indexOf('data-play="notice"') &&
+        !/class="play-notice"/.test(html) &&
+        !/play-notice-title/.test(html) &&
+        /data-play="notice-list"/.test(html));
+    ok('★ P101：幕布上那行字居中显示（幕布本身 flex 居中）+ 内容仍由 JS 按 works.js 渲染',
+        /display:\s*flex/.test(curtainCss) && /justify-content:\s*center/.test(curtainCss) &&
+        /align-items:\s*center/.test(curtainCss) &&
+        /\.play-notice-list/.test(cssNC) && /\.play-notice-item/.test(cssNC),
+        '（列表/条目样式还在，只是从"游戏区下方一块"变成"幕布上的一行"）');
+    ok('★★ P101：默认不可见（opacity 0 + visibility: hidden），is-on 才闪出来、is-out 才闪掉',
+        /opacity:\s*0/.test(noticeCss) && /visibility:\s*hidden/.test(noticeCss) &&
+        /\.play-curtain-notice\.is-on\s*\{[^}]*animation:\s*noticeFlicker/.test(cssNC) &&
+        /animation:\s*noticeFlicker[\d\s\w]*steps\(1,\s*end\)/.test(cssNC) &&
+        /\.play-curtain-notice\.is-on\.is-out\s*\{[^}]*animation:\s*noticeOut/.test(cssNC));
+    const flickKf = (cssNC.match(/@keyframes noticeFlicker\s*\{[\s\S]*?\n\}/) || [''])[0];
+    const outKf = (cssNC.match(/@keyframes noticeOut\s*\{[\s\S]*?\n\}/) || [''])[0];
+    ok('★★ P101：闪烁真的在闪（一串 opacity 台阶）、闪掉是 1 → 0',
+        (flickKf.match(/opacity:\s*[01](\.[\d]+)?;/g) || []).length >= 5 &&
+        /0%[^}]*opacity:\s*0/.test(flickKf) && /100%[^}]*opacity:\s*1/.test(flickKf) &&
+        /0%[^}]*opacity:\s*1/.test(outKf) && /100%[^}]*opacity:\s*0/.test(outKf));
+    ok('★ P101：这行字不许吃鼠标（幕布 pointer-events: none + 自己也不吃）',
+        /pointer-events:\s*none/.test(curtainCss) && /pointer-events:\s*none/.test(noticeCss));
+
+    /* ★★ P101b：你说的三点 —— 去掉边框 / 容器撑满游戏区 / 字号≈README 二级标题 ✓ */
+    const listCss = (cssNC.match(/\.play-notice-list\s*\{[^}]*\}/) || [''])[0];
+    const itemCss = (cssNC.match(/\.play-notice-item\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P101b：那行字**没有边框**（列表上下两条线去掉了，整块只靠字站在黑幕上）',
+        listCss.length > 0 && !/border/.test(listCss) &&
+        /width:\s*fit-content/.test(listCss),
+        listCss.replace(/\s+/g, ' ').trim().slice(0, 80));
+    ok('★★ P101b：那层容器**撑满整个游戏区**（绝对定位 + inset: 0，字在正中）——'
+        + '幕布铺多大它就多大 ✓',
+        /position:\s*absolute/.test(noticeCss) && /inset:\s*0/.test(noticeCss) &&
+        /display:\s*flex/.test(noticeCss) &&
+        /justify-content:\s*center/.test(noticeCss) && /align-items:\s*center/.test(noticeCss));
+    const h2Size = parseFloat((/\.play-readme h2\s*\{[^}]*font-size:\s*([\d.]+)rem/.exec(cssNC) || [])[1] || '0');
+    const itemSize = parseFloat((/font-size:\s*([\d.]+)rem/.exec(itemCss) || [])[1] || '0');
+    ok('★★ P101b：字号 = README 二级标题的字号（' + itemSize + 'rem vs h2 的 ' + h2Size + 'rem）——'
+        + '自检比着这两个数，改一边忘另一边会红 ✓',
+        h2Size > 0 && itemSize === h2Size, itemSize + ' / ' + h2Size);
+    ok('★ P101b：圆点那条内缩还在（::before 绝对定位在 left: 2px，省了会压在字上）',
+        /padding-left:\s*1em/.test(itemCss) && /\.play-notice-item::before/.test(cssNC));
+    /* 时序：黑幕全黑 → 闪出来 → 停 3s → 闪掉（400ms）→ 才接"剩下的动画" ✓ */
+    const noticeOutMs = parseFloat((/noticeOut\s+(\d+)ms/.exec(cssNC) || [])[1] || '0');
+    ok('★★ P101：JS 的时间点 —— 停 3s（NOTICE_HOLD_MS），且 NOTICE_OUT_MS 与 CSS 的 noticeOut 时长一致（'
+        + noticeOutMs + 'ms）',
+        /const NOTICE_HOLD_MS = 3000;/.test(jsSide) &&
+        noticeOutMs > 0 && new RegExp('const NOTICE_OUT_MS = ' + noticeOutMs + ';').test(jsSide));
+    ok('★★ P101：只有"这条有内容"才闪 —— 没开 / 没写就照常走黑幕剩下的动画 ✓',
+        /if \(noticeEl && noticeList && noticeList\.childNodes\.length\) \{/.test(jsSide) &&
+        /noticeEl\.classList\.add\('is-on'\)/.test(jsSide) &&
+        /noticeEl\.classList\.add\('is-out'\)/.test(jsSide) &&
+        /setTimeout\(curtainRest, NOTICE_OUT_MS\)/.test(jsSide) &&
+        /const curtainRest = function \(\)/.test(jsSide));
+    ok('★★ P101：内容**选中就备好**（renderNotice 只填内容，不碰可见性）——'
+        + '可见性完全交给过场那三个类 ✓',
+        /function renderNotice\(w\)/.test(jsSide) &&
+        fnBody(jsSide, 'renderNotice').indexOf('hidden') === -1 &&
         /renderNotice\(w\);/.test(jsSide) &&
-        /function resetStage\(\)[\s\S]{0,320}?renderNotice\(null\);/.test(jsSide));
+        /function resetStage\(\)[\s\S]{0,400}?renderNotice\(null\);/.test(jsSide) &&
+        /function clearIntro\(\)[\s\S]{0,300}?noticeEl\.classList\.remove\('is-on', 'is-out'\)/.test(jsSide));
     /* ★ 这条原来写的是"两条都是 false、不许出现 true" —— 后来**你自己**把
        boom-shooting / fission 的 noticeOn 打开了，于是它开始误报 ✗。
        语义上没有"必须关着"这回事（代码里不写就是关 ✓），所以改成"每条 unity
@@ -1547,6 +2018,38 @@ section('[2ae] 游戏详细页 = 一页 README（P91）');
     ok('★★ 字色走 --play-ink（面板在深浅两套主题里都是暗的，不能用会跟着主题翻的 --text）',
         /--play-ink:\s*#E1E1E1/.test(sideCss) && /color:\s*var\(--play-ink/.test(sideCss));
 
+    /* --- ★★ P93e：README 的滚动条（长文必须看得出"还能滚"，而且要配暗面板）--- */
+    /* ★ 取"某个选择器所在的规则块"：滚动条那几条是**共用一条规则**的
+       （`.play-readme::-webkit-scrollbar, .play-readme pre.md-code::-webkit-scrollbar { … }`），
+       所以不能写 `选择器\s*\{` —— 中间还夹着逗号续行 ✗；
+       也别在搜索串里带尾逗号（它可能是选择器表里的**最后一个**，末尾就没有逗号）。 */
+    const ruleOf = function (sel) {
+        const at = sideCss.indexOf(sel);
+        if (at < 0) return '';
+        const open = sideCss.indexOf('{', at);
+        const close = sideCss.indexOf('}', open);
+        return (open < 0 || close < 0) ? '' : sideCss.slice(open + 1, close);
+    };
+    ok('★（前置）README 这块自己滚（overflow-y: auto）—— 有内容滚得动才谈得上滚动条',
+        /\.play-body\.is-readme\s+\.play-readme\s*\{[^}]*overflow-y:\s*auto/.test(sideCss));
+    ok('★★ P93e：滚动条走 --play-* 那一套（不跟主题翻）—— 标准属性 + ::-webkit-* 两套都写',
+        /\.play-readme\s*\{[^}]*scrollbar-width:\s*thin/.test(sideCss) &&
+        /\.play-readme\s*\{[^}]*scrollbar-color:\s*var\(--play-line\)\s+transparent/.test(sideCss) &&
+        /width:\s*10px/.test(ruleOf('.play-readme::-webkit-scrollbar')) &&
+        /var\(--play-line\)/.test(ruleOf('.play-readme::-webkit-scrollbar-thumb')),
+        ruleOf('.play-readme::-webkit-scrollbar'));
+    ok('★★ P93e：滑块"细"是 border + background-clip 做的，所以 hover **只能改 background-color**' +
+        '（用 background 简写会把 clip 重置 → 指上去的一瞬间滑块变宽、跳一下 ✗）',
+        /background-clip:\s*content-box/.test(ruleOf('.play-readme::-webkit-scrollbar-thumb')) &&
+        /border:\s*2px solid transparent/.test(ruleOf('.play-readme::-webkit-scrollbar-thumb')) &&
+        /background-color:\s*var\(--accent\)/.test(ruleOf('.play-readme::-webkit-scrollbar-thumb:hover')) &&
+        /* ★ 只查**我们这几条**：main 那条老滚动条用的就是 background 简写（它没有细滑块，无所谓） */
+        !/\.play-readme[^{}]*scrollbar-thumb:hover[^{}]*\{\s*background:/.test(sideCss));
+    ok('★ P93e：代码块的**横向**滚动条同款（长命令行不会突然冒出一条系统默认滚动条）',
+        /\.play-readme pre\.md-code\s*\{[^}]*scrollbar-width:\s*thin/.test(sideCss) &&
+        /height:\s*8px/.test(ruleOf('.play-readme pre.md-code::-webkit-scrollbar')) &&
+        /pre\.md-code::-webkit-scrollbar-thumb:hover/.test(sideCss));
+
     ok('★★ 解析器零依赖、纯函数：不碰 DOM、不发请求（只有 escapeHtml / slug / toHtml / safeUrl）',
         /global\.Markdown = \{/.test(jsMd) &&
         !/document\.|querySelector|fetch\(/.test(jsMd) &&
@@ -1605,11 +2108,22 @@ section('[2af] 导航栏上的游戏控件：关闭 / 静音 / 全屏（P93）')
         /data-play="ctl-full"[^>]*aria-pressed="false"[^>]*disabled/.test(html));
 
     /* ★★ 这就是"收起的一瞬间还回来"的全部实现：纯 class 驱动，没有 JS 定时器。
-       close() 第一件事就是摘掉 body.sidebar-open → 导航键立刻回来 ✓（不用等滑完）。 */
-    ok('★★ 展开时藏导航按键、显示游戏控件（纯 body.sidebar-open 驱动，瞬时）',
-        /body\.sidebar-open \.logo,\s*\nbody\.sidebar-open \.nav-links,\s*\nbody\.sidebar-open \.theme-toggle\s*\{[^}]*display:\s*none/.test(cssNC) &&
+       close() 第一件事就是摘掉 body.sidebar-open → 导航键立刻回来 ✓（不用等滑完）。
+       ★ P93b（你的要求）：展开时**只藏导航链接** —— logo 与主题切换键留着，
+         所以这里不只验"藏了 nav-links"，还反过来验"那两条**没有**被藏" ✓。 */
+    ok('★★ 展开时藏导航链接、显示游戏控件（纯 body.sidebar-open 驱动，瞬时）',
+        /body\.sidebar-open \.nav-links\s*\{[^}]*display:\s*none/.test(cssNC) &&
         /body\.sidebar-open \.play-controls\s*\{[^}]*display:\s*block/.test(cssNC) &&
         /\.play-controls\s*\{\s*display:\s*none/.test(cssNC));
+    ok('★★ P93b：logo 与主题切换键**不跟着藏**（它们不是跳走的入口 —— 你的要求）',
+        !/body\.sidebar-open \.logo\s*[,{]/.test(cssNC) &&
+        !/body\.sidebar-open \.theme-toggle/.test(cssNC) &&
+        /* ★ 反过来也要成立：藏起来的那条规则里**不许**捎带这两个（防止哪天又被加回去） */
+        (function () {
+            const rule = (cssNC.match(/body\.sidebar-open[^{]*\{[^}]*display:\s*none[^}]*\}/g) || []).join(' ');
+            return rule.indexOf('.nav-links') !== -1 &&
+                rule.indexOf('.logo') === -1 && rule.indexOf('.theme-toggle') === -1;
+        })(), (cssNC.match(/body\.sidebar-open[^{]*\{[^}]*display:\s*none[^}]*\}/g) || []).join(' '));
     ok('★★ 收起是"一瞬间"：close() 一开头就摘掉 sidebar-open（不靠定时器、不等过渡）',
         /classList\.remove\(['"]sidebar-open['"]\)/.test(jsSide) &&
         !/setTimeout\([^)]*sidebar-open/.test(jsSide));
@@ -1655,6 +2169,56 @@ section('[2af] 导航栏上的游戏控件：关闭 / 静音 / 全屏（P93）')
     ok('★ 全屏：请求的是 iframe 本身（游戏铺满），退出走 document.exitFullscreen',
         /frame\.requestFullscreen \|\| frame\.webkitRequestFullscreen/.test(jsSide) &&
         /doc\.exitFullscreen \|\| doc\.webkitExitFullscreen/.test(jsSide));
+
+    /* ★★ P93c：全屏 + Keyboard Lock（浏览器保留键只能靠它要回来） */
+    const lockBody = fnBody(jsSide, 'lockKeyboard'), unlockBody = fnBody(jsSide, 'unlockKeyboard');
+    ok('★★ P93c：有 lockKeyboard / unlockKeyboard，而且都**先做能力检测**（Firefox / Safari 没这 API）',
+        /window\.navigator && window\.navigator\.keyboard/.test(lockBody) &&
+        /typeof kb\.lock !== ['"]function['"]/.test(lockBody) &&
+        /typeof kb\.unlock !== ['"]function['"]/.test(unlockBody));
+    const lockList = (jsSide.match(/const LOCK_CODES = \[[\s\S]*?\];/) || [''])[0];
+    const needCodes = ['Tab', 'ArrowLeft', 'ArrowRight', 'KeyT', 'KeyN', 'Digit1', 'Digit9'];
+    ok('★★ P93c：锁的是那一串**浏览器保留键**（Ctrl+T/N、Ctrl+1…9、Ctrl+Tab、Alt+←→）',
+        needCodes.every(function (c) { return lockList.indexOf("'" + c + "'") !== -1; }),
+        'list=' + JSON.stringify(lockList));
+    ok('★★ P93c：故意**不锁** Escape / KeyW / F11 / F12 —— 四个逃生口一个都不许进 LOCK_CODES',
+        /const LOCK_CODES = \[[\s\S]*?\];/.test(jsSide) &&
+        (function () {
+            const list = (jsSide.match(/const LOCK_CODES = \[[\s\S]*?\];/) || [''])[0];
+            return list.indexOf("'Escape'") === -1 && list.indexOf("'KeyW'") === -1 &&
+                list.indexOf("'F11'") === -1 && list.indexOf("'F12'") === -1 &&
+                list.indexOf("'F4'") === -1;      // F4 留着：Alt+F4 是系统级的"关窗口"
+        })());
+    ok('★★ P93c：顺序照规范 —— 进全屏**先 lock() 再 requestFullscreen()**、退出**先 exitFullscreen() 再 unlock()**',
+        lockBody.length > 0 &&
+        jsSide.indexOf('lockKeyboard();') < jsSide.indexOf('req.call(frame)') &&
+        (jsSide.match(/exit\.call\(doc\)[\s\S]{0,120}?unlockKeyboard\(\)/) || []).length === 1 &&
+        fnBody(jsSide, 'stopGame').indexOf('unlockKeyboard();') !== -1);
+    ok('★★ P93c：全屏没了（含按 Esc 自己退的）就解锁 —— 别让"锁"在后台挂着',
+        /if \(!fsEl\) unlockKeyboard\(\);/.test(fnBody(jsSide, 'syncControls')));
+
+    /* ★★ P93d：真全屏 —— 把**游戏页里的 canvas** 也拉满
+       （Unity 默认模板把它写死成 960×540 居中，所以我们只全屏 iframe 是不够的） */
+    const fillBody = fnBody(jsSide, 'applyGameFill');
+    const fillCssArr = (jsSide.match(/const FILL_CSS = \[[\s\S]*?\]\.join/) || [''])[0];
+    const fillCssText = (fillCssArr.match(/'[^']*'/g) || []).map(function (s) { return s.slice(1, -1); }).join('');
+    const fillRules = fillCssText.split('}').map(function (r) { return r.replace(/^\s+/, ''); })
+        .filter(function (r) { return r.length > 0; });
+    ok('★★ P93d：每一条规则都挂在 html.site-fs 下 —— 不全屏时对游戏页一个像素都不动 ✓',
+        fillRules.length >= 4 && fillRules.every(function (r) { return /^html\.site-fs/.test(r); }),
+        fillRules.length + ' 条：' + fillRules[0]);
+    ok('★★ P93d：canvas 尺寸带 !important（模板写的是**内联** 960×540，普通样式压不过内联）',
+        /html\.site-fs #unity-canvas[^{]*\{[^}]*width: 100% !important/.test(fillCssText) &&
+        /[^}]*height: 100% !important/.test(fillCssText));
+    ok('★ P93d：容器也拉满（模板是 left/top:50% + translate(-50%,-50%) 居中）+ 藏掉 Unity 自带的页脚',
+        /#unity-container \{ position: absolute !important; left: 0 !important; top: 0 !important;/.test(fillCssText) &&
+        /transform: none !important/.test(fillCssText) &&
+        /#unity-footer \{ display: none !important; \}/.test(fillCssText));
+    ok('★★ P93d：由 syncControls 驱动（进/退全屏那一刻加/摘类）；样式只插一次；跨源时静默跳过',
+        /applyGameFill\(!!fsEl\)/.test(fnBody(jsSide, 'syncControls')) &&
+        /if \(!doc\.getElementById\(FILL_ID\)\)/.test(fillBody) &&
+        /classList\.remove\(['"]site-fs['"]\)/.test(fillBody) &&
+        /try \{ doc = frame\.contentDocument \|\| null; \} catch \(err\) \{ return; \}/.test(fillBody));
 })();
 
 /* ============================================================
@@ -2368,7 +2932,10 @@ section('[2i] 悬停状态不能变陈：滚动时补命中测试（P35）');
             '.win-list-item:hover',
             '.play-close:hover',             // ★ P63：侧边栏是 fixed chrome，不随页面滚
             '.play-cart:hover',              // ★ P64：卡带栏同上（也在侧边栏里）
+            '.play-cart:hover::after',       // ★ P94：卡带选中/悬停的那层红遮罩（同上）
             '.play-start:hover',             // ★ P81：「开始游戏」同上
+            '.play-readme::-webkit-scrollbar-thumb:hover',             // ★ P93e：README 滚动条
+            '.play-readme pre.md-code::-webkit-scrollbar-thumb:hover', // ★ P93e：代码块横向滚动条
         ];
         const seen = [];
         const ruleRe = /([^{}]+)\{/g;
@@ -3319,7 +3886,12 @@ class El {
         this.hidden = false;
         this.open = false;
         this.isConnected = false;
-        this.style = { setProperty() {}, removeProperty() {} };
+        this.style = {
+            _p: Object.create(null),
+            setProperty(k, v) { this._p[k] = String(v); },
+            removeProperty(k) { delete this._p[k]; },
+            getPropertyValue(k) { return this._p[k] === undefined ? '' : this._p[k]; },
+        };
     }
     setAttribute(k, v) {
         this.attrs[k] = String(v);
@@ -3359,6 +3931,26 @@ class El {
     /* ★ P75：桩里也没有 remove() —— 卡带悬停那条"跟随鼠标的回执"是临时节点，
        鼠标离开时要自己摘掉。注意 doc.querySelectorAll 走的是 _els（摘了也还在），
        所以断言要用 doc.body.querySelectorAll（走 childNodes）。 */
+    /* ★★ P96：桩里原来**故意没有** cloneNode（那时拖动只靠舞台高亮），
+       现在"浮起卡带"就是克隆出来的，缺它整条路都验不到 ✗ —— 补一个：
+       深拷贝 class / attrs / dataset / 文本 / 孩子（孩子再递归克隆）。 */
+    cloneNode(deep) {
+        const c = new El(this.tagName);
+        c.className = this.className;
+        c.attrs = Object.assign(Object.create(null), this.attrs);
+        c.dataset = Object.assign({}, this.dataset);
+        c.textContent = this.textContent;
+        c.hidden = this.hidden;
+        c.style = Object.assign({ setProperty() { }, removeProperty() { }, getPropertyValue() { return ''; } }, this.style);
+        if (deep) {
+            this.childNodes.forEach((n) => {
+                c.append(n.nodeType === 1 && n.cloneNode ? n.cloneNode(true)
+                    : { nodeType: n.nodeType, textContent: n.textContent });
+            });
+        }
+        doc._els.push(c);                     // 和 createElement 一致
+        return c;
+    }
     remove() {
         const p = this.parentElement;
         if (p) p.childNodes = p.childNodes.filter((n) => n !== this);
@@ -3743,10 +4335,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         const rail = doc.createElement('nav');
         rail.className = 'play-rail';
+        /* ★★ P98：卡带登场前那张"标题卡"（和 index.html 一样，排在 ul 之前） */
+        const railTitle = doc.createElement('p');
+        railTitle.className = 'play-rail-title';
+        railTitle.setAttribute('data-play', 'rail-title');
+        railTitle.textContent = '游戏卡带';
         const carts = doc.createElement('ul');
         carts.className = 'play-carts';
         carts.setAttribute('data-play', 'carts');
-        rail.append(carts);
+        rail.append(railTitle, carts);
+        /* ★★ P103：选中框（.play-carts 的**兄弟** —— 塞进 ul 里不合法、还会挤开卡带 ✓） */
+        const cartFrameEl = doc.createElement('span');
+        cartFrameEl.className = 'play-cart-frame';
+        cartFrameEl.setAttribute('data-play', 'cart-frame');
+        rail.append(cartFrameEl);
 
         const mainEl = doc.createElement('div');
         mainEl.className = 'play-main';
@@ -3767,6 +4369,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         const playStage = doc.createElement('div'); playStage.setAttribute('data-play', 'stage');
         stage.append(specNo, specName, specMeta, startBtnEl, playStage);
 
+        /* ★★ P99/P101：开场黑幕 —— 是 playStage 的**兄弟**（住在里面会被 stopGame 的
+           replaceChildren() 连根拔掉 ✗），和 index.html 一样排在舞台之后 ✓；
+           「游玩注意」那行字住在黑幕**里面**（P101 从游戏区下方搬过来的）✓ */
+        const curtainEl0 = doc.createElement('div');
+        curtainEl0.className = 'play-curtain';
+        curtainEl0.setAttribute('data-play', 'curtain');
+        const noticeBox = doc.createElement('div');
+        noticeBox.className = 'play-curtain-notice';
+        noticeBox.setAttribute('data-play', 'notice');
+        const noticeUl = doc.createElement('ul');
+        noticeUl.className = 'play-notice-list';
+        noticeUl.setAttribute('data-play', 'notice-list');
+        noticeBox.append(noticeUl);
+        curtainEl0.append(noticeBox);
+        stage.append(curtainEl0);
+
         /* ★ P91：游戏详细页那块 README（和 index.html 一样，排在游戏层之前） */
         const readmeBox = doc.createElement('div');
         readmeBox.className = 'play-readme';
@@ -3781,17 +4399,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         stage.append(msgEl);
 
         mainEl.append(barEl, stage);
-
-        /* ★ P84：游戏区下方那块「游玩注意」（和 index.html 一样，默认 hidden） */
-        const noticeBox = doc.createElement('section');
-        noticeBox.className = 'play-notice';
-        noticeBox.setAttribute('data-play', 'notice');
-        noticeBox.hidden = true;
-        const noticeUl = doc.createElement('ul');
-        noticeUl.className = 'play-notice-list';
-        noticeUl.setAttribute('data-play', 'notice-list');
-        noticeBox.append(noticeUl);
-        mainEl.append(noticeBox);
         aside.append(rail, mainEl);
 
         /* 首页那个触发按钮 */
@@ -3842,8 +4449,66 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             return api;
         }
 
+        /* ★★ P94：图标这条路**从数据里读**，不假设"只有一条带图标" ——
+           你已经把 4 条能玩的都填上了（`assets/images/_test.jpg`）✓。
+           万一以后一条都没填，这里临时给"第一张能玩的"补一个（只动内存里的对象，
+           不碰你的数据文件）—— 这样这条测试永远有东西可验 ✓。
+           ★ 必须在 eval(sidebar.js) **之前**写：卡带是模块初始化时生成一次的。 */
+        const ICON_SRC = 'assets/images/_test.jpg';
+        const unityData = (window.WORKS || []).filter(function (w) { return w.kind === 'unity'; });
+        if (!unityData.some(function (w) { return !!w.icon; })) {
+            const seed = unityData.findIndex(function (w) { return !!w.src; });
+            if (seed >= 0) unityData[seed].icon = ICON_SRC;
+        }
+
         eval(read('js/sidebar.js'));
         const PS = window.PlaySidebar;
+
+        /* ============================================================
+           ★★ P97/P98/P99：这一节里凡是**过场**都是"定时器串起来的"，
+           所以从这里开始把 setTimeout 换成**手动泵**（测试里按时间点推）——
+           这一节一直保持"一个 await 都不用" ✓。快照在最后还原（[6] 之后还有别的
+           异步小节在等真的定时器 ✗ 不能就这么换掉不管）。
+           ============================================================ */
+        const toKeep = global.setTimeout, ctoKeep = global.clearTimeout;
+        let timerSeq = 0;
+        let timers = [];
+        global.setTimeout = function (fn, ms) {
+            timers.push({ id: ++timerSeq, fn: fn, ms: ms, dead: false });
+            return timerSeq;
+        };
+        global.clearTimeout = function (id) {
+            const t = timers.filter(function (x) { return x.id === id; })[0];
+            if (t) t.dead = true;
+        };
+        /* 按**毫秒数**找待跑的那个，不按下标 —— 名单里混着别的过场（兜底 530ms、
+           标题 1s、卡带 250ms……），按下标会指错 ✓ */
+        const pending = function (ms) {
+            return timers.filter(function (t) { return !t.dead && t.ms === ms; });
+        };
+        /* 取**最后排上的**那个 —— 同毫秒的两个（卡带的 250 / 幕布的 250）按注册先后分 ✓ */
+        const firePending = function (ms) {
+            const list = pending(ms);
+            const t = list[list.length - 1];
+            if (t) { t.dead = true; t.fn(); }
+            return !!t;
+        };
+        /* ★★ P99/P100：开场几拍（250 md 闪没 → 400 停顿 → 250 幕布 → 450 停 →
+           400 渐出；有「游玩注意」时中间还有 3000 + 400）——
+           老的那些"点开始 / 拖到舞台上"的测试不关心这套，一句 flushIntro() 推完 ✓
+           ★ 用"最老的那条待跑定时器"循环推进（不写死顺序）——
+             有注意 / 没注意两条路都能推干净 ✓ */
+        const INTRO_MS = [250, 400, 450, 3000];
+        const flushIntro = function () {
+            for (let i = 0; i < 20; i++) {
+                const t = timers.filter(function (x) {
+                    return !x.dead && INTRO_MS.indexOf(x.ms) !== -1;
+                })[0];
+                if (!t) return;
+                t.dead = true;
+                t.fn();
+            }
+        };
 
         ok('PlaySidebar 导出 open / close / toggle / select',
             !!PS && typeof PS.open === 'function' && typeof PS.close === 'function' &&
@@ -3851,6 +4516,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         /* --- 卡带：按 works.js 生成 --- */
         const btns = carts.querySelectorAll('.play-cart');
+        /* ★★ P103：桩里没有布局 → 给每张卡带一个人造的 offset/尺寸
+           （选中框的位置就是按它们算的，不造就没得验 ✓） */
+        btns.forEach(function (b, i) {
+            b.offsetWidth = 40;
+            b.offsetHeight = 112;
+            b.offsetLeft = 6;
+            b.offsetTop = 8 + i * 124;
+        });
         const unity = (window.WORKS || []).filter((w) => w.kind === 'unity');
         /* ★★ 这一节全程**从数据里读**，不写死是哪一条：卡带内容是你的数据，随时会变
            —— 目前就出现过"只挂 readme、没有 src"的条目（md样式）✓。
@@ -3874,6 +4547,29 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         ok('★ 每张卡带都有编号和（竖排的）名字',
             btns.every((b) => b.querySelectorAll('.play-cart-no')[0].textContent &&
                 b.querySelectorAll('.play-cart-name')[0].textContent));
+
+        /* --- ★★ P94：卡带图标（works.js 的 icon 字段）---
+           ★ 哪一张带图标**由数据决定**（你现在 4 条都填了），所以这里从 unity 里找
+              "第一条写了 icon 的 / 第一条没写的"，不写死下标 ✓ */
+        const iconIdx = unity.findIndex(function (w) { return !!w.icon; });
+        const noIconIdx = unity.findIndex(function (w) { return !w.icon; });
+        const iconImg = (iconIdx >= 0 && btns[iconIdx])
+            ? btns[iconIdx].querySelectorAll('.play-cart-icon')[0] : null;
+        ok('★★ P94：写了 icon 的卡带铺一张图标（src 就是那条路径），而且排在编号/名字之前',
+            !!iconImg && iconImg.src === unity[iconIdx].icon &&
+            btns[iconIdx].childNodes[0] === iconImg,
+            iconImg ? String(iconImg.src) + ' / 第一个孩子=' +
+                (btns[iconIdx].childNodes[0] || {}).className : '没有 img');
+        ok('★★ P94：加载失败（路径写错 / 文件不存在）→ 把 <img> 摘掉，退回纯色卡带',
+            (function () {
+                if (!iconImg) return false;
+                iconImg.fire('error', { target: iconImg });          // 浏览器加载失败就是这条事件
+                return btns[iconIdx].querySelectorAll('.play-cart-icon').length === 0;
+            })());
+        ok('★ P94：没写 icon 的卡带一个 <img> 都不加（就是纯色一块）',
+            noIconIdx < 0 || btns[noIconIdx].querySelectorAll('.play-cart-icon').length === 0,
+            noIconIdx < 0 ? '（数据里每条 unity 都写了 icon —— 这条只剩静态那半）'
+                : '第 ' + noIconIdx + ' 张（' + unity[noIconIdx].id + '）没有 icon');
         ok('★（前置）至少有一条 unity 带 src（有真能玩的游戏）：' + (play ? play.id : '(没有)'),
             !!play && !!playBtn);
         /* --- ★★ P75：默认**不**选中任何一张 --- */
@@ -3962,14 +4658,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             stage.classList.contains('is-dragging') && stage.classList.contains('is-drop'));
         ok('★★ P85：拖动期间 body 挂着 is-cart-dragging（整块面板换成"握住"光标）',
             doc.body.classList.contains('is-cart-dragging'));
+        /* ★★ P95：拖起来的那张原位变成"空槽位"（CSS 把内容 visibility: hidden 掉） */
+        ok('★★ P95：拖动期间**源卡带**挂上 is-taken —— 原位变成空槽（内容跟着手上那张走了）',
+            playBtn.classList.contains('is-taken'));
+        ok('★ P95：空槽里那三个孩子（图标/编号/名字）都还在 DOM 里（只隐藏，尺寸不跳）',
+            playBtn.querySelectorAll('.play-cart-no').length === 1 &&
+            playBtn.querySelectorAll('.play-cart-name').length === 1 &&
+            playBtn.childNodes.length >= 2,
+            String(playBtn.childNodes.length));
         ok('★ 拖动期间把跟随回执收掉了', doc.body.querySelectorAll('.cursor-toast').length === 0);
         playBtn.fire('pointerup', { target: playBtn, pointerId: 1, clientX: 20, clientY: 60 });
+        flushIntro();                       // ★ P99：推完开场三拍（md 闪没 → 幕布 → 载入 → 渐出）
         ok('★★ 落在舞台上松手 = 启动（按这张卡带的 id 选中）',
             PS.current === play.id, String(PS.current));
         ok('★★ 松手之后两个提示类都清掉、影子也摘掉、body 的"握住"也摘掉',
             !stage.classList.contains('is-drop') && !stage.classList.contains('is-dragging') &&
             !doc.body.classList.contains('is-cart-dragging') &&
             doc.body.querySelectorAll('.is-ghost').length === 0);
+        ok('★★ P95：松手后内容回到槽位里（is-taken 摘掉 —— 拖完还空着就露馅了）',
+            !playBtn.classList.contains('is-taken'));
         /* 拖完那一下浏览器还会派发一次 click —— 必须被吃掉，否则状态会再跳一次 */
         playBtn.fire('click', { target: playBtn });
         ok('★ 拖完后的那次 click 被吃掉（不再重复选中 / 收执）', PS.current === play.id);
@@ -3981,11 +4688,82 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         other.fire('pointermove', { target: other, pointerId: 2, clientX: 220, clientY: 220 });
         other.fire('pointerup', { target: other, pointerId: 2, clientX: 220, clientY: 220 });
         ok('★ 拖到舞台外面松手 = 作废（选中不变）', PS.current === wasCurrent, String(PS.current));
+        ok('★ P95：作废这一下槽位也还原了（内容回来，不留一个空壳）',
+            !other.classList.contains('is-taken'));
+        /* ★★ P100b：拖完那一下浏览器**还会**派发一次 click（指针被 capture 在卡带上，
+           哪怕松手在卡带外面）→ 这里把那一下补上：必须被吃掉（选中不变）✓
+           不补的话标志位会一直挂着，把后面某次正常点击吞掉 ✗（这条测出来的） */
+        other.fire('click', { target: other });
+        ok('★ P100b：拖到舞台外松手后那一下 click 也被吃掉（选中不变，不会误选）',
+            PS.current === wasCurrent, String(PS.current));
+
+        /* --- ★★ P95：中途取消（指针被打断 / Esc）也要把卡带放回槽位 --- */
+        playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 9, clientX: 10, clientY: 10 });
+        playBtn.fire('pointermove', { target: playBtn, pointerId: 9, clientX: 20, clientY: 60 });
+        ok('★（前置）又拖起来了（source 是空槽）', playBtn.classList.contains('is-taken'));
+        playBtn.fire('pointercancel', { target: playBtn, pointerId: 9 });
+        ok('★★ P95：pointercancel（指针被打断）→ 空槽立刻还原',
+            !playBtn.classList.contains('is-taken') && !stage.classList.contains('is-dragging'));
+
+        /* --- ★★ P96：拿起那一下 + 延迟跟手（把 rAF 换成**手动泵**，推帧验缓动）---
+           ★ 这一节一直是"一个 await 都不用"，所以不能等真的 rAF ——
+             把 requestAnimationFrame 收进数组，测试里自己按时间戳推帧 ✓ */
+        (function ghostEasing() {
+            const rafKeep = global.requestAnimationFrame;
+            const cafKeep = global.cancelAnimationFrame;
+            let frames = [], cancelled = 0;
+            global.requestAnimationFrame = function (fn) { frames.push(fn); return frames.length; };
+            global.cancelAnimationFrame = function () { cancelled++; };
+            const pump = function (now) { const f = frames.shift(); if (f) f(now); };
+            const num = function (s, re) { return parseFloat((re.exec(String(s)) || [])[1] || 'NaN'); };
+            const trX = function (s) { return num(s, /translate\((-?[\d.]+)px/); };
+            const trY = function (s) { return num(s, /,\s*(-?[\d.]+)px\)/); };
+            const trS = function (s) { return num(s, /scale\(([\d.]+)\)/); };
+
+            playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 5, clientX: 100, clientY: 100 });
+            playBtn.fire('pointermove', { target: playBtn, pointerId: 5, clientX: 200, clientY: 300 });
+            const gh = doc.body.querySelectorAll('.is-ghost')[0];
+            ok('★★ P96：拖起来那一刻，手上多了一张"浮起卡带"（就是那张卡带的克隆）',
+                !!gh && gh.classList.contains('is-ghost') && gh.classList.contains('play-cart') &&
+                gh !== playBtn, gh ? gh.className : '没有影子');
+            /* 桩里的假矩形是 (0,0,40,120)：startDrag 是从 pointermove(200,300) 进来的，
+               所以"抓点" = 指针相对卡带左上角 = (200,300)。
+               ★ 于是克隆那一张的起始位置 = 指针 - 抓点 = (0,0) —— 也就是**原卡带自己的位置** ✓
+                 （拿起来时卡带不跳，正是这条的意义）。 */
+            ok('★★ P96：刚拿起来时克隆就摆在原卡带的位置上（不跳），而且还是"没抬起"的样子',
+                trX(gh.style.transform) === 0 && trY(gh.style.transform) === 0 &&
+                trS(gh.style.transform) === 1, String(gh.style.transform));
+            ok('★ P96：缓动循环已经开起来了（排了一帧；起点钉在指针上，不会从别处飞过来）',
+                frames.length === 1, '待推帧数=' + frames.length);
+
+            /* 指针再走 200px（200 → 400）→ 卡带要"追"：一帧只追一部分，推够帧数才贴上 ✓ */
+            playBtn.fire('pointermove', { target: playBtn, pointerId: 5, clientX: 400, clientY: 300 });
+            pump(16.7);
+            const x1 = trX(gh.style.transform);
+            ok('★★ P96：延迟跟手 —— 指针又走 200px，一帧之后卡带只追了一小段（' + x1 + '，目标 200）',
+                x1 > 0 && x1 < 200, String(gh.style.transform));
+            ok('★ P96：抬起/放大也在推进（scale 已经大于 1、还没到 1.06）',
+                trS(gh.style.transform) > 1 && trS(gh.style.transform) < 1.06,
+                String(gh.style.transform));
+            for (let i = 0; i < 60; i++) pump(16.7 * (i + 2));
+            ok('★★ P96：停手就贴上来（推够帧数：位置追上目标、抬起走完 = 上移 8px + 放大到 1.06）',
+                trX(gh.style.transform) === 200 && trY(gh.style.transform) === -8 &&
+                trS(gh.style.transform) === 1.06,
+                String(gh.style.transform));
+
+            playBtn.fire('pointerup', { target: playBtn, pointerId: 5, clientX: 400, clientY: 300 });
+            ok('★★ P96：松手 → 影子摘掉 + 缓动循环 cancel（这条 rAF 只在拖动期间活着）',
+                !doc.body.querySelectorAll('.is-ghost')[0] && cancelled >= 1, String(cancelled));
+
+            global.requestAnimationFrame = rafKeep;
+            global.cancelAnimationFrame = cafKeep;
+        })();
 
         /* --- ★★ P81：拖到舞台上 = 真的开始（往游戏层里挂 iframe） --- */
         playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 3, clientX: 10, clientY: 10 });
         playBtn.fire('pointermove', { target: playBtn, pointerId: 3, clientX: 20, clientY: 60 });
         playBtn.fire('pointerup', { target: playBtn, pointerId: 3, clientX: 20, clientY: 60 });
+        flushIntro();                       // ★ P99：开场三拍推完，下面是"游戏已经挂上"的断言
         ok('★★ 舞台进 play 状态，游戏层里挂上了 iframe',
             stage.dataset.state === 'play' && playStage.querySelectorAll('.play-frame').length === 1,
             stage.dataset.state + ' / ' + playStage.querySelectorAll('.play-frame').length);
@@ -4107,6 +4885,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         /* 「开始游戏」按钮：点击选中的那条路也能开 */
         startBtnEl.fire('click', { target: startBtnEl });
+        flushIntro();                       // ★ P99：开场三拍推完
         ok('★ 点「开始游戏」：挂上 iframe、进 play',
             playStage.querySelectorAll('.play-frame').length === 1 && stage.dataset.state === 'play',
             'current=' + PS.current + ' frames=' + playStage.querySelectorAll('.play-frame').length +
@@ -4114,11 +4893,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         /* 收个尾：点另一张把正在跑的卸掉，让后面的断言从干净的 game 态开始 */
         otherBtn.fire('click', { target: otherBtn });
         ok('★ 再点另一条：iframe 卸掉、退回 game 态',
-            playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game');
+            playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game',
+            'frames=' + playStage.querySelectorAll('.play-frame').length +
+            ' state=' + stage.dataset.state + ' current=' + PS.current);
 
         /* --- 换一张卡带（★ 也是从数据里读：otherBtn）--- */
-        otherBtn.fire('click', { target: otherBtn });
-        ok('★★ 点另一张：选中态翻过去、舞台规格跟着换、状态从 empty 变 game',
+        otherBtn.fire('click', { target: otherBtn });        ok('★★ 点另一张：选中态翻过去、舞台规格跟着换、状态从 empty 变 game',
             PS.current === otherWork.id && otherBtn.getAttribute('aria-pressed') === 'true' &&
             btns[playIdx].getAttribute('aria-pressed') === 'false' &&
             specName.textContent === (otherWork.title || otherWork.id) &&
@@ -4128,6 +4908,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         ok('★ 挑卡带不会顺手把游乐区打开', !doc.body.classList.contains('sidebar-open'));
 
         /* --- 开 / 关 --- */
+        /* ★★ P97/P98/P99：这几段过场都是"定时器串起来的"（亮 1s → 渐隐 → 0.25s 卡带冒；
+           或者 md 闪没 → 幕布 → 载入 → 渐出）—— setTimeout 已经在上面换成**手动泵**了 ✓ */
+
         trigger.fire('click', { target: trigger });
         ok('★★ 点按钮：body 挂类 + aria 同步 + 焦点进关闭键 + 背景停表 + 刻度时钟反向闪没',
             doc.body.classList.contains('sidebar-open') &&
@@ -4138,6 +4921,33 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             'focus=' + (doc._focus && doc._focus.className) + ' paused=' + (paused - pausedBefore) +
             ' clock=' + circleHide + '/' + circleShow);
 
+        /* --- ★★ P97/P98：滑到位 → 标题卡闪一下 → 卡带才逐个冒出来 --- */
+        ok('★★ P97：刚开门（面板还在滑）时卡带栏**还没有** is-in —— 那 450ms 里是空栏',
+            !carts.classList.contains('is-in') && !railTitle.classList.contains('is-in'));
+        ok('★ P97：每张卡带的 --cart-i 就是它的序号（错开"冒出来"的先后靠它）',
+            btns.every(function (b, i) { return b.style.getPropertyValue('--cart-i') === String(i); }),
+            btns.map(function (b) { return b.style.getPropertyValue('--cart-i'); }).join(','));
+        /* 面板上还挂着 visibility 那条过渡：它派发的 transitionend **不算数** ✓ */
+        aside.fire('transitionend', { target: aside, propertyName: 'visibility' });
+        ok('★ P98：只认 left 那条过渡 —— visibility 派发的 transitionend 不启动过场',
+            !railTitle.classList.contains('is-in') && !carts.classList.contains('is-in'));
+        aside.fire('transitionend', { target: aside, propertyName: 'left' });
+        ok('★★ P98：滑到位 → 「游戏卡带」闪烁出现（is-in），此时卡带**一个都还没出来**',
+            railTitle.classList.contains('is-in') && !railTitle.classList.contains('is-out') &&
+            !carts.classList.contains('is-in'));
+        ok('★★ P98：接着排上的是"亮着 1s"那个定时器（你说的 1s），'
+            + '而那条兜底的 530ms 已经被取消 ✓',
+            pending(1000).length === 1 && pending(530).length === 0,
+            '1s=' + pending(1000).length + ' / 530=' + pending(530).length);
+        firePending(1000);
+        ok('★★ P98：1s 到 → 标题**开始渐隐**（is-out），卡带仍然没出来',
+            railTitle.classList.contains('is-out') && !carts.classList.contains('is-in'));
+        ok('★★ P98：下一个定时器是 0.25s（"开始渐隐之后 0.25s 再让卡带出现"）',
+            pending(250).length === 1, String(pending(250).length));
+        firePending(250);
+        ok('★★ P98：0.25s 到 → 卡带才开始逐个冒（is-in；CSS 那边再逐张错开 90ms）',
+            carts.classList.contains('is-in'));
+
         sidebarClose.fire('click', { target: sidebarClose });
         ok('★★ 点关闭：类摘掉 + aria 复位 + 焦点还给按钮 + 背景恢复 + 刻度时钟闪回来',
             !doc.body.classList.contains('sidebar-open') &&
@@ -4145,6 +4955,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             trigger.getAttribute('aria-expanded') === 'false' &&
             trigger === doc._focus && resumed === resumedBefore + 1 &&
             circleShow === 1, 'clock=' + circleHide + '/' + circleShow);
+        ok('★★ P97：关门**不摘** is-in —— 卡带跟着面板一起滑走，不能在滑走途中消失/冒出来',
+            carts.classList.contains('is-in'));
+        ok('★★ P98：关门把标题卡收掉（过场不该跟着面板滑出去时还亮着）+ 相关定时器全清',
+            !railTitle.classList.contains('is-in') && !railTitle.classList.contains('is-out') &&
+            [530, 1000, 250].every(function (ms) { return pending(ms).length === 0; }),
+            [530, 1000, 250].map(function (ms) { return ms + ':' + pending(ms).length; }).join(' '));
 
         /* --- Esc --- */
         PS.open(trigger);
@@ -4164,6 +4980,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         /* ★ 复位会清掉选中（这正是要验的行为）—— 所以先重新选一条**能玩的**再开 */
         playBtn.fire('click', { target: playBtn });
         startBtnEl.fire('click', { target: startBtnEl });   // 先开一个游戏
+        flushIntro();                                      // ★ P99：开场三拍推完
         ok('★ （前置）正在跑：play 态 + 有 iframe',
             stage.dataset.state === 'play' && playStage.querySelectorAll('.play-frame').length === 1,
             'current=' + PS.current + ' state=' + stage.dataset.state);
@@ -4172,6 +4989,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             playStage.querySelectorAll('.play-frame').length === 0 && stage.dataset.state === 'game',
             stage.dataset.state);
         PS.open(trigger);
+        ok('★★ P81/P97/P98：再开门 → 复位把 is-in 摘了、标题卡也收干净（下一轮重演）',
+            !carts.classList.contains('is-in') &&
+            !railTitle.classList.contains('is-in') && !railTitle.classList.contains('is-out'));
+        aside.fire('transitionend', { target: aside, propertyName: 'left' });
+        ok('★ P98：于是标题卡又闪一次（第二次 is-in）',
+            railTitle.classList.contains('is-in') && !carts.classList.contains('is-in'));
         ok('★★ 再打开：舞台回到 empty、没有 iframe、卡带按下态清掉、选中置空',
             stage.dataset.state === 'empty' &&
             playStage.querySelectorAll('.play-frame').length === 0 &&
@@ -4186,48 +5009,45 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         first.fire('mouseleave', { target: first });
         PS.close();
 
-        /* --- ★★ P84：「游玩注意」那块提示 ---
-           开关与内容都在 works.js（noticeOn / notice），默认整块不出现。
-           这里临时改那两条数据再选卡带 —— 验的是**渲染这套机制**，
-           不是某一段文案（文案归你自己写，改它要重裁字体 [2b]）。 */
+        /* --- ★★ P84 → P101：「游玩注意」的内容渲染（黑幕上那行字）---
+           开关与内容仍在 works.js（noticeOn / notice）。P101 起**选中时只把内容备好、
+           不再显示**；显示时机交给开场过场（下面 P101 那段逐拍验）✓
+           这里验的是"渲染这套机制"（数据驱动，不写死文案 ✓）。 */
         const wNot = play;                       // ★ 数据驱动：第一张能玩的卡带（别写死 id）
         const keepOn = wNot.noticeOn, keepText = wNot.notice;
-        ok('★ 默认不选中任何一条时：那块是 hidden、列表是空的',
-            noticeBox.hidden === true && noticeUl.childNodes.length === 0);
 
         wNot.noticeOn = true;
         wNot.notice = ['第一段注意事项', '第二段注意事项'];
         playBtn.fire('click', { target: playBtn });            // ★ wNot 就是 play：点它的卡带
-        ok('★★ 开关打开 + 两段文字 → 选中卡带就出现，两段按顺序、各是一个 li',
-            noticeBox.hidden === false && noticeUl.childNodes.length === 2 &&
+        ok('★★ P101：选中时**只把内容备好**（两个 li），但**一个类都不加** —— 还不显示 ✓',
+            noticeUl.childNodes.length === 2 &&
             noticeUl.childNodes[0].textContent === '第一段注意事项' &&
             noticeUl.childNodes[1].textContent === '第二段注意事项' &&
-            noticeUl.childNodes[0].className === 'play-notice-item',
-            noticeBox.hidden + ' / ' + noticeUl.childNodes.length);
+            noticeUl.childNodes[0].className === 'play-notice-item' &&
+            !noticeBox.classList.contains('is-on') && !noticeBox.classList.contains('is-out'),
+            noticeUl.childNodes.length + ' 条 / ' + noticeBox.className);
 
         wNot.noticeOn = false;
-        otherBtn.fire('click', { target: otherBtn });                   // 换到另一条（那条也没开）
+        otherBtn.fire('click', { target: otherBtn });                   // 换到另一条（没开）
         playBtn.fire('click', { target: playBtn });                   // 再切回来
-        ok('★★ 开关关掉：那块收起来，而且列表清空（不留上一条的残影）',
-            noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+        ok('★★ 开关关掉：内容清空（不留上一条的残影）', noticeUl.childNodes.length === 0);
 
         wNot.noticeOn = true;
         wNot.notice = '   ';                                  // 开了但只有空白
         otherBtn.fire('click', { target: otherBtn });
         playBtn.fire('click', { target: playBtn });
-        ok('★ 开了但内容是空白 → 不出一个空框', noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+        ok('★ 开了但内容是空白 → 一条都不留（过场那边就不会闪）', noticeUl.childNodes.length === 0);
 
         wNot.notice = '一句话注意\n第二行';                    // 字符串也吃，\n 分段
         otherBtn.fire('click', { target: otherBtn });
         playBtn.fire('click', { target: playBtn });
         ok('★ 内容写成字符串也行（\\n 分成两段）',
-            noticeBox.hidden === false && noticeUl.childNodes.length === 2 &&
+            noticeUl.childNodes.length === 2 &&
             noticeUl.childNodes[1].textContent === '第二行');
 
         wNot.noticeOn = keepOn; wNot.notice = keepText;        // 还原桩里的数据
         PS.open(trigger);
-        ok('★★ 关门再开门（重置那一刻）：提醒也收掉了',
-            noticeBox.hidden === true && noticeUl.childNodes.length === 0);
+        ok('★★ 关门再开门（重置那一刻）：内容也清掉了', noticeUl.childNodes.length === 0);
         PS.close();
 
         /* --- ★★ P85：拦截是 works.js 里一条开关（keyGuardOn）管的 ---
@@ -4239,6 +5059,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             secondPlayBtn.fire('click', { target: secondPlayBtn });      // 先换走（卸掉正在跑的那局）
             playBtn.fire('click', { target: playBtn });                  // 换回来
             startBtnEl.fire('click', { target: startBtnEl });            // 真的开
+            flushIntro();                                               // ★ P99：开场三拍推完
         };
 
         wKey.keyGuardOn = keepKeyGuard;                        // 保持数据里那个值
@@ -4467,6 +5288,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             PS.open(trigger);
             playBtn.fire('click', { target: playBtn });
             startBtnEl.fire('click', { target: startBtnEl });
+            flushIntro();                       // ★ P99：开场三拍推完
             const ctlFrame = playStage.querySelectorAll('.play-frame')[0];
             ok('★ （前置）这一局真的在跑（舞台上挂着 iframe）',
                 !!ctlFrame && stage.dataset.state === 'play', stage.dataset.state);
@@ -4503,20 +5325,103 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
                 return { catch() { } };
             };
 
+            /* ★★ P93c：Keyboard Lock 的桩。
+               Node 自带的 navigator 是"只读 getter"（而且没有 .keyboard），
+               所以用 defineProperty 顶掉它，用完还原 ✓。
+               Chrome / Edge 有这 API，Firefox / Safari 没有 —— 两条路都要验。 */
+            const kb = { locks: [], unlocks: 0 };
+            const kbDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+            Object.defineProperty(globalThis, 'navigator', {
+                value: {
+                    keyboard: {
+                        /* 不带参数 = 锁所有键（那时候 codes 是 undefined，记成 null） */
+                        lock(codes) { kb.locks.push(codes === undefined ? null : codes.slice()); return { catch() { } }; },
+                        unlock() { kb.unlocks++; },
+                    },
+                },
+                configurable: true, writable: true,
+            });
+
+            /* ★★ P93d：给这一帧装一份"假游戏文档"，验"一进全屏就把 canvas 拉满、退出还原"。
+               真文档里那件事由 CSS 完成（规则见 [2af]），Unity 会跟着把渲染分辨率调大 ✓ */
+            const fillClass = {
+                _s: {}, add(c) { this._s[c] = true; }, remove(c) { delete this._s[c]; },
+                contains(c) { return !!this._s[c]; },
+            };
+            const fillStyles = [];
+            const gameDoc = {
+                documentElement: { classList: fillClass },
+                head: { appendChild(n) { fillStyles.push(n); return n; } },
+                byId: {},
+                getElementById(id) { return this.byId[id] || null; },
+                createElement(tag) {
+                    const el = { tagName: String(tag).toUpperCase(), id: '', textContent: '' };
+                    el.setAttribute = function (k, v) { if (k === 'id') { el.id = v; gameDoc.byId[v] = el; } };
+                    return el;
+                },
+            };
+            let innerResizes = 0;
+            ctlFrame.contentDocument = gameDoc;
+            ctlFrame.contentWindow = {
+                Event: function (t) { this.type = t; },
+                dispatchEvent() { innerResizes++; },
+            };
+
             ctlFull.fire('click', { target: ctlFull });
             ok('★★ 点「全屏」：喊的是**正在跑的那个 iframe** 的 requestFullscreen（不是整页）',
                 fsReq === 1, String(fsReq));
             ok('★★ 进了全屏：开关反映现实（aria-pressed=true）',
                 ctlFull.getAttribute('aria-pressed') === 'true');
+            /* ★★ P93c：lock() 要在 requestFullscreen **之前**喊（规范 4.1 的建议） */
+            ok('★★ P93c：进全屏时也把浏览器保留键要回来了（navigator.keyboard.lock 被喊了一次）',
+                kb.locks.length === 1, JSON.stringify(kb.locks));
+            const lockArgs = kb.locks[0] || [];
+            ok('★★ P93c：锁的正是"页面永远抢不到"的那一串（Ctrl+T/N、Ctrl+1…9、Ctrl+Tab、Alt+←→）',
+                ['KeyT', 'KeyN', 'Digit1', 'Digit9', 'Tab', 'ArrowLeft', 'ArrowRight'].every(function (c) {
+                    return lockArgs.indexOf(c) !== -1;
+                }), JSON.stringify(lockArgs));
+            ok('★★ P93c：逃生口一个都没锁（Esc 单击退全屏 / Ctrl+W 关标签 / F11 / F12 / Alt+F4）',
+                ['Escape', 'KeyW', 'F11', 'F12', 'F4'].every(function (c) {
+                    return lockArgs.indexOf(c) === -1;
+                }), JSON.stringify(lockArgs));
+            /* ★★ P93d：这才是"真全屏"那一步 —— 游戏页里那张写死 960×540 的 canvas 被拉满 */
+            ok('★★ P93d：进全屏那一刻，游戏页里的 canvas 也被拉满（html.site-fs + 一条样式）',
+                fillClass.contains('site-fs') && fillStyles.length === 1 &&
+                fillStyles[0].id === 'site-fullscreen-fill' &&
+                /width: 100% !important/.test(fillStyles[0].textContent),
+                fillStyles.length + ' 条 / class=' + fillClass.contains('site-fs'));
+            ok('★ P93d：顺手在游戏页里喊了一声 resize（老版本 Unity 靠它重算渲染分辨率）',
+                innerResizes >= 1, String(innerResizes));
 
             /* Esc 退出是全屏 API 自己干的 —— 按钮必须跟得上（否则会永远显示"全屏中"） */
             doc.fullscreenElement = null;
             doc.dispatchEvent({ type: 'fullscreenchange' });
             ok('★★ 浏览器那边自己退了（例如 Esc）：按钮跟着复位，不需要我们再点',
                 ctlFull.getAttribute('aria-pressed') === 'false' && fsExit === 0);
+            ok('★★ P93c：按 Esc 自己退的这次也把锁解开了（不留"后台还锁着"的状态）',
+                kb.unlocks >= 1, String(kb.unlocks));
+            ok('★★ P93d：退出全屏 → 摘掉那个类（游戏页回到模板原本的 960×540 居中版式）',
+                !fillClass.contains('site-fs'));
 
             ctlFull.fire('click', { target: ctlFull });          // 再进一次，验"停游戏时退全屏"
             ok('★ （前置）又进去了', fsReq === 2 && ctlFull.getAttribute('aria-pressed') === 'true');
+            ok('★ P93c：再进一次 = 再要一次（lock 累计两次）', kb.locks.length === 2, JSON.stringify(kb.locks));
+            ok('★ P93d：再进一次**不会**重复插样式（同一个游戏页只留一条）',
+                fillStyles.length === 1 && fillClass.contains('site-fs'), String(fillStyles.length));
+
+            /* ★ P93c：没有 Keyboard Lock 的浏览器（Firefox / Safari）—— 退全屏那块要静默跳过 ✓ */
+            const unlockBefore = kb.unlocks;
+            let noApiThrew = false;
+            delete navigator.keyboard;
+            try {
+                doc.fullscreenElement = null;
+                doc.dispatchEvent({ type: 'fullscreenchange' });   // 这里会走"没 API"那条路
+            } catch (err) { noApiThrew = true; }
+            ok('★ P93c：Firefox / Safari 那种没有 Keyboard Lock 的环境：退全屏照样不炸',
+                noApiThrew === false && kb.unlocks === unlockBefore, String(kb.unlocks));
+            ctlFull.fire('click', { target: ctlFull });          // 没 API 也要能正常进全屏
+            ok('★ P93c：没 API 时全屏本身照旧（只是浏览器保留键拿不回来）',
+                fsReq === 3 && ctlFull.getAttribute('aria-pressed') === 'true', String(fsReq));
 
             otherBtn.fire('click', { target: otherBtn });        // 换一条 → 这一局结束
             ok('★★ 这一局一停：全屏自动退出（别把浏览器全屏留给后面）',
@@ -4526,6 +5431,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
                 ctlMute.getAttribute('aria-pressed') === 'false' &&
                 ctlFull.getAttribute('aria-pressed') === 'false');
 
+            /* 还原：Node 自己的 navigator（后面几节还可能用它） */
+            if (kbDesc) Object.defineProperty(globalThis, 'navigator', kbDesc);
+            else delete globalThis.navigator;
             delete doc.fullscreenElement;
             delete doc.exitFullscreen;
         })();
@@ -4534,6 +5442,484 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         wKey.keyGuardOn = keepKeyGuard;                        // 还原桩里的数据
         PS.close();
+
+        /* ============================================================
+           ★★ P99/P100：开场五拍（点开始 / 拖到舞台上 → md 闪没 → 停 0.4s → 黑幕 →
+           载入 → 渐出）；以及"正在跑游戏时拖入新卡带 = 直接渐入黑幕"那条路 ✓
+           ★ 手动泵定时器 —— 这一节一直不用 await ✓
+           ============================================================ */
+        PS.open(trigger);
+        playBtn.fire('click', { target: playBtn });
+        /* ★★ P101：下面这几段验的是"这条**没有**「游玩注意」"的时间线 ——
+           先在数据里把**所有** unity 的注意关掉（你给几张开了 ✓），测完再还原 ✓ */
+        const keepNotices = unity.map(function (w) {
+            return { w: w, on: w.noticeOn, text: w.notice };
+        });
+        unity.forEach(function (w) { w.noticeOn = false; w.notice = ''; });
+        playBtn.fire('click', { target: playBtn });   // 重新选中 → 内容按新的数据铺一次 ✓
+        const curtain = aside.querySelector('[data-play="curtain"]');
+        ok('★★ P99：游戏区里有一块开场黑幕（.play-curtain），而且是`.play-stage`的**兄弟**'
+            + '（住在里面会被 stopGame 的 replaceChildren() 拔掉 ✗）',
+            !!curtain && curtain.className === 'play-curtain' &&
+            playStage.childNodes.indexOf(curtain) === -1 &&
+            stage.childNodes.indexOf(curtain) === stage.childNodes.indexOf(playStage) + 1,
+            curtain ? 'stage 里的第 ' + stage.childNodes.indexOf(curtain) + ' 个' : '没有幕布');
+
+        startBtnEl.fire('click', { target: startBtnEl });
+        ok('★★ P99：① 点开始的第一拍 = md 内容闪烁消失（.play-body.is-starting），'
+            + '**此时还没有 iframe**（游戏要等幕布全黑才载入）',
+            stage.classList.contains('is-starting') &&
+            playStage.querySelectorAll('.play-frame').length === 0 &&
+            !curtain.classList.contains('is-in'));
+        ok('★ P99：① 排的是 250ms（md 闪没那一下）', pending(250).length >= 1,
+            String(pending(250).length));
+        firePending(250);
+        ok('★★ P100：①′ 闪完之后先**停一下**（0.4s）—— 幕布这时还**没**起来',
+            pending(400).length >= 1 && !curtain.classList.contains('is-in') &&
+            playStage.querySelectorAll('.play-frame').length === 0,
+            '0.4s 的定时器=' + pending(400).length);
+        firePending(400);
+        ok('★★ P99：② 停 0.4s 之后幕布才开始渐入（is-in）—— 但**仍然没有 iframe**',
+            curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 0);
+        ok('★ P99：② 排的是 250ms（幕布渐入那一下）', pending(250).length >= 1,
+            String(pending(250).length));
+        firePending(250);
+        ok('★★ P99：③ 幕布**完全不透明之后**才开始载入（这一刻 iframe 才出现，'
+            + '载入层也一起挂上）',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            playStage.querySelectorAll('.play-loading').length === 1 &&
+            curtain.classList.contains('is-in') && !curtain.classList.contains('is-out'));
+        ok('★★ P99：③ 载入之后是 0.45s 的停顿（你说的 0.45s），还没开始渐出',
+            pending(450).length === 1 && !curtain.classList.contains('is-out'),
+            String(pending(450).length));
+        firePending(450);
+        ok('★★ P99：④ 0.45s 到 → 幕布渐出（is-out）', curtain.classList.contains('is-out'));
+        ok('★ P99：④ 渐出是 400ms（排上的那条）', pending(400).length === 1,
+            String(pending(400).length));
+        firePending(400);
+        ok('★★ P99：⑤ 收尾：三个类都摘掉（md 内容回到可见、幕布回到出厂状态），'
+            + '游戏照旧在跑',
+            !stage.classList.contains('is-starting') &&
+            !curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 1);
+
+        /* 半路停掉（换一条卡带 / 关面板）→ 过场立刻收干净，不留半个幕布 ✗ */
+        playBtn.fire('click', { target: playBtn });
+        startBtnEl.fire('click', { target: startBtnEl });
+        firePending(250);                                      // md 闪没刚演完
+        firePending(400);                                      // 幕布刚起来
+        otherBtn.fire('click', { target: otherBtn });          // 换一条 = stopGame
+        ok('★★ P99：过场演到一半被打断（换卡带 / 关面板）→ 幕布与 md 状态立刻收干净',
+            !stage.classList.contains('is-starting') &&
+            !curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 0);
+
+        /* ============================================================
+           ★★ P100：**正在跑游戏时拖入新卡带** → 直接渐入黑幕（不闪 md、不停 0.4s），
+           全黑那一刻才关上一局 + 载入下一局，再 0.45s 渐出 ✓
+           ============================================================ */
+        playBtn.fire('click', { target: playBtn });
+        startBtnEl.fire('click', { target: startBtnEl });
+        flushIntro();
+        const oldSrc = String(playStage.querySelectorAll('.play-frame')[0].src);
+        ok('★（前置）先跑起来一局（' + oldSrc.replace(/^.*\//, '') + '）',
+            playStage.querySelectorAll('.play-frame').length === 1 && !!oldSrc);
+
+        /* 拖另一张到舞台上（= select(w.id, true) + startGame） */
+        secondPlayBtn.fire('pointerdown', { target: secondPlayBtn, button: 0, pointerId: 7, clientX: 10, clientY: 10 });
+        secondPlayBtn.fire('pointermove', { target: secondPlayBtn, pointerId: 7, clientX: 20, clientY: 60 });
+        secondPlayBtn.fire('pointerup', { target: secondPlayBtn, pointerId: 7, clientX: 20, clientY: 60 });
+        ok('★★ P100：换卡带时**跳过** md 那一拍（屏幕上正跑着游戏，没有 md 可闪）+ 幕布立刻渐入',
+            !stage.classList.contains('is-starting') && curtain.classList.contains('is-in') &&
+            !curtain.classList.contains('is-out'));
+        ok('★★ P100：幕布渐入的这 250ms 里，**上一局还在跑**（不能先空场）',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            String(playStage.querySelectorAll('.play-frame')[0].src) === oldSrc);
+        ok('★ P100：换卡带走的是"幕布 250ms"那一拍（没有 0.4s 停顿在排队）',
+            pending(250).length === 1 && pending(400).length === 0,
+            '250=' + pending(250).length + ' / 400=' + pending(400).length);
+
+        firePending(250);
+        const newSrc = String(playStage.querySelectorAll('.play-frame')[0].src);
+        ok('★★ P100：全黑那一刻才换：上一局卸掉、新一局挂上（同一时刻只有一张 iframe）',
+            playStage.querySelectorAll('.play-frame').length === 1 && newSrc !== oldSrc &&
+            playStage.querySelectorAll('.play-loading').length === 1,
+            oldSrc.replace(/^.*\//, '') + ' → ' + newSrc.replace(/^.*\//, ''));
+        firePending(450);
+        ok('★ P100：然后同样停 0.45s 才渐出', curtain.classList.contains('is-out'));
+        firePending(400);
+        ok('★★ P100：收尾和普通开场一模一样（类摘掉、游戏照旧在跑）',
+            !stage.classList.contains('is-starting') &&
+            !curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 1);
+        PS.close();
+
+        /* ============================================================
+           ★★ P100b：拖到舞台上时 **md 页保持上一个内容**（不提前换）+ 拖完那一下
+           浏览器**还会**派发一次 click（指针被 capture 在卡带上）—— 必须被吃掉，
+           否则它会把刚开始的过场按掉（stopGame + cancelIntro）→ 屏幕上只剩新卡带的
+           md 页、游戏根本没起来 ✗✗（你报的第二件事就是它）
+           ============================================================ */
+        const fetched = [];
+        window.fetch = function (url) {
+            fetched.push(String(url));
+            return syncFetch({ ok: true, text: function () { return '# MD:' + url; } });
+        };
+        const aIdx = unity.findIndex(function (w) { return !!w.readme && !!w.src; });
+        const bIdx = unity.findIndex(function (w, i) { return i !== aIdx && !!w.src; });
+        const aBtn = aIdx >= 0 ? btns[aIdx] : null, bBtn = bIdx >= 0 ? btns[bIdx] : null;
+        ok('★（前置）两张能玩的卡带，A 带 readme（A=' + (aBtn && unity[aIdx].id) +
+            ' / B=' + (bBtn && unity[bIdx].id) + '）', !!aBtn && !!bBtn);
+
+        PS.open(trigger);
+        aBtn.fire('click', { target: aBtn });                  // 选中 A（铺上 A 的 md）
+        const mdA = readmeBox.innerHTML;
+        startBtnEl.fire('click', { target: startBtnEl });       // A 跑起来
+        flushIntro();
+        const aSrc = String(playStage.querySelectorAll('.play-frame')[0].src);
+        ok('★（前置）A 的 md 已铺上、A 的游戏也在跑',
+            mdA.length > 0 && /MD:/.test(mdA) &&
+            playStage.querySelectorAll('.play-frame').length === 1 && aSrc === unity[aIdx].src,
+            mdA.slice(0, 48));
+
+        /* 拖着 B 进舞台（此时 A 正在跑） */
+        bBtn.fire('pointerdown', { target: bBtn, button: 0, pointerId: 21, clientX: 10, clientY: 10 });
+        bBtn.fire('pointermove', { target: bBtn, pointerId: 21, clientX: 20, clientY: 60 });
+        bBtn.fire('pointerup', { target: bBtn, pointerId: 21, clientX: 20, clientY: 60 });
+        ok('★★ P100b：换卡带时 md 页**一个字都没换**（还留着 A 的内容）+ 幕布立刻起来',
+            readmeBox.innerHTML === mdA && curtain.classList.contains('is-in') &&
+            !stage.classList.contains('is-starting'));
+        ok('★ P100b：这会儿 A 还在跑（旧画面没被提前拔掉）',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            String(playStage.querySelectorAll('.play-frame')[0].src) === aSrc);
+
+        /* ★★ 浏览器紧接着派发的那一下 click —— 修复前它会把过场按掉 */
+        bBtn.fire('click', { target: bBtn });
+        ok('★★ P100b：那一下 click 被吃掉 → 过场还活着（250ms 那一拍仍在），'
+            + 'A 也没被提前 stopGame',
+            pending(250).length === 1 &&
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            String(playStage.querySelectorAll('.play-frame')[0].src) === aSrc &&
+            readmeBox.innerHTML === mdA,
+            '250=' + pending(250).length);
+
+        firePending(250);
+        ok('★★ P100b：全黑那一刻才换：新游戏 = B 的 src（同一时刻只有一张 iframe）',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            String(playStage.querySelectorAll('.play-frame')[0].src) === unity[bIdx].src,
+            String(playStage.querySelectorAll('.play-frame')[0].src));
+        ok('★★ P100b：内容也是那时才换的 —— md 页变成 B 的（幕后换 ✓）',
+            readmeBox.innerHTML !== mdA && readmeBox.innerHTML.indexOf('MD:') !== -1,
+            readmeBox.innerHTML.slice(0, 48));
+        firePending(450);
+        firePending(400);
+        ok('★ P100b：收尾同普通开场（类摘掉、游戏照旧在跑）',
+            !stage.classList.contains('is-starting') &&
+            !curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 1);
+
+        /* ★★ P100b 另一半：**没在跑游戏**时拖进来（你报的第一件事的常见场景）——
+           md 页同样要保持上一个内容，直到黑幕全黑才换 ✓
+           （这条专治"startGame 里那句 stopGame 顺手把待铺内容铺了" ✗） */
+        PS.close();
+        PS.open(trigger);
+        aBtn.fire('click', { target: aBtn });                   // 重新铺上 A 的 md
+        const mdA2 = readmeBox.innerHTML;
+        ok('★（前置）A 的 md 又铺上了', mdA2.length > 0 && /MD:/.test(mdA2), mdA2.slice(0, 40));
+        bBtn.fire('pointerdown', { target: bBtn, button: 0, pointerId: 22, clientX: 10, clientY: 10 });
+        bBtn.fire('pointermove', { target: bBtn, pointerId: 22, clientX: 20, clientY: 60 });
+        bBtn.fire('pointerup', { target: bBtn, pointerId: 22, clientX: 20, clientY: 60 });
+        ok('★★ P100b：没在跑游戏时拖入也一样 —— 闪的是**上一个卡带**的 md（没提前换）',
+            readmeBox.innerHTML === mdA2 && stage.classList.contains('is-starting') &&
+            !curtain.classList.contains('is-in'),
+            readmeBox.innerHTML.slice(0, 40));
+        bBtn.fire('click', { target: bBtn });                   // 浏览器那一下
+        flushIntro();
+        ok('★ P100b：过场走完 → 内容才换成 B 的 + 游戏起来',
+            readmeBox.innerHTML !== mdA2 && /MD:/.test(readmeBox.innerHTML) &&
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            String(playStage.querySelectorAll('.play-frame')[0].src) === unity[bIdx].src);
+        delete window.fetch;
+        PS.close();
+
+        /* ============================================================
+           ★★ P101：「游玩注意」= 黑幕上那行字
+           时序：黑幕**完全不透明之后**闪出来 → 停 3s → 闪掉 →
+                 **然后才**接黑幕剩下的动画（停 0.45s → 渐出 → 收尾）✓
+           ============================================================ */
+        keepNotices.forEach(function (k) { k.w.noticeOn = k.on; k.w.notice = k.text; });
+        play.noticeOn = true;
+        play.notice = ['第一段注意事项', '第二段注意事项'];
+        PS.open(trigger);
+        playBtn.fire('click', { target: playBtn });            // 内容先备好（还不显示 ✓）
+        ok('★（前置）内容备好了（两个 li），而且**还没**显示',
+            noticeUl.childNodes.length === 2 &&
+            !noticeBox.classList.contains('is-on'), noticeBox.className);
+
+        startBtnEl.fire('click', { target: startBtnEl });
+        firePending(250);                                      // md 闪没
+        firePending(400);                                      // 停 0.4s
+        firePending(250);                                      // 幕布渐入（现在全黑了）
+        ok('★★ P101：幕布全黑 —— 游戏在幕后开始载入，同时那行字**闪出来**（is-on，还没 is-out）',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            noticeBox.classList.contains('is-on') && !noticeBox.classList.contains('is-out') &&
+            noticeUl.childNodes.length === 2,
+            noticeBox.className);
+        ok('★★ P101：接着排的是"停 3s"（你说的 3s）',
+            pending(3000).length === 1, '3000=' + pending(3000).length);
+        ok('★ P101：这 3s 里幕布还**没有**开始渐出（剩下的动画等它闪完 ✓）',
+            !curtain.classList.contains('is-out'));
+
+        firePending(3000);                                     // 3s 到 → 开始闪掉
+        ok('★★ P101：3s 到 → 那行字闪掉（is-out），幕布**仍然**没渐出',
+            noticeBox.classList.contains('is-out') && !curtain.classList.contains('is-out'));
+        ok('★★ P101：闪掉的过程是 400ms（和 CSS 的 noticeOut 对齐），排上了',
+            pending(400).length === 1, String(pending(400).length));
+        firePending(400);                                      // 闪完了
+        ok('★★ P101：★ 这时才 = "黑幕完全不透明那一刻" → 接上剩下的动画（停 0.45s 排上了）',
+            pending(450).length === 1 && !curtain.classList.contains('is-out'),
+            String(pending(450).length));
+        firePending(450);
+        ok('★ P101：0.45s 到 → 幕布渐出', curtain.classList.contains('is-out'));
+        firePending(400);
+        ok('★★ P101：收尾 —— 幕布三个类 + 那行字的两个类都摘掉，游戏照旧在跑',
+            !stage.classList.contains('is-starting') && !curtain.classList.contains('is-in') &&
+            !curtain.classList.contains('is-out') &&
+            !noticeBox.classList.contains('is-on') && !noticeBox.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 1,
+            noticeBox.className);
+        PS.close();
+
+        /* 没开注意的条目：全黑之后**不**闪那行字，直接走剩下的动画 ✓ */
+        play.noticeOn = false;
+        play.notice = '';
+        PS.open(trigger);
+        playBtn.fire('click', { target: playBtn });
+        startBtnEl.fire('click', { target: startBtnEl });
+        firePending(250);
+        firePending(400);
+        firePending(250);
+        ok('★★ P101：这条没有注意 → 全黑之后不闪那行字，直接排"停 0.45s" ✓',
+            playStage.querySelectorAll('.play-frame').length === 1 &&
+            !noticeBox.classList.contains('is-on') && pending(3000).length === 0 &&
+            pending(450).length === 1,
+            '3000=' + pending(3000).length + ' / 450=' + pending(450).length);
+        flushIntro();
+        ok('★ P101：一路收尾干净', !curtain.classList.contains('is-in') &&
+            !noticeBox.classList.contains('is-on') &&
+            playStage.querySelectorAll('.play-frame').length === 1);
+        PS.close();
+        play.noticeOn = keepOn; play.notice = keepText;         // 还原数据（和前面的 P84 段一致）
+
+        /* ============================================================
+           ★★ P103：选中框 —— 跟着"当前选中的那张卡带"走的一个方框
+           没选中 → 隐藏；选中 → 在那张卡带位置**闪烁出现**；
+           已选中时点别的 / 拖别的进舞台 → **平移**过去（CSS 的 ease-in-out = 先慢后快再慢 ✓）
+           ★ 放在这一节最后：它会额外开关面板几次，前面那些"开关次数"的断言不能被它打乱 ✓
+           ============================================================ */
+        (function cartFrame() {
+            const frameEl = aside.querySelector('[data-play="cart-frame"]');
+            const at = function (b) {
+                return 'translate(' + (b.offsetLeft - 1) + 'px, ' + (b.offsetTop - 1) + 'px)';
+            };
+            ok('★（前置）桩里那个方框在，而且每张卡带都有假 offset（不然位置没得验）',
+                !!frameEl && btns.every(function (b) { return b.offsetTop > 0; }));
+
+            PS.open(trigger);                               // 开门 → 复位 → 没选中 ✓
+            ok('★★ P103：没选中任何卡带时，方框整块隐藏（连 is-on 都没有）',
+                !frameEl.classList.contains('is-on'));
+
+            playBtn.fire('click', { target: playBtn });      // 选中第一张能玩的
+            ok('★★ P103：一选中就**在那张卡带的位置闪烁出现**（is-on），而且比外轮廓大 1px'
+                + '（位置 -1、宽高 +2）',
+                frameEl.classList.contains('is-on') &&
+                frameEl.style.transform === at(playBtn) &&
+                frameEl.style.width === (playBtn.offsetWidth + 2) + 'px' &&
+                frameEl.style.height === (playBtn.offsetHeight + 2) + 'px',
+                frameEl.style.transform + ' / ' + frameEl.style.width + '×' + frameEl.style.height);
+            ok('★ P103：第一次出现**不演平移**（is-placing 只在摆位那一瞬间挂上，之后已摘掉）',
+                !frameEl.classList.contains('is-placing'));
+
+            secondPlayBtn.fire('click', { target: secondPlayBtn });   // 已选中时点另一张
+            ok('★★ P103：已选中时点别的卡带 → 方框**平移**过去（transform 换成新卡带的位置，'
+                + '而且不重新闪）',
+                frameEl.classList.contains('is-on') &&
+                frameEl.style.transform === at(secondPlayBtn) &&
+                at(secondPlayBtn) !== at(playBtn),
+                frameEl.style.transform);
+
+            /* "开始运行别的卡带的游戏"那条路（拖到舞台上）也要把框带过去 ✓ */
+            playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 31, clientX: 10, clientY: 10 });
+            playBtn.fire('pointermove', { target: playBtn, pointerId: 31, clientX: 20, clientY: 60 });
+            playBtn.fire('pointerup', { target: playBtn, pointerId: 31, clientX: 20, clientY: 60 });
+            ok('★★ P103：拖到舞台上开始另一条 → 方框也跟着移到那张卡带上 ✓',
+                frameEl.style.transform === at(playBtn) && frameEl.classList.contains('is-on'));
+            flushIntro();
+
+            PS.close();
+            PS.open(trigger);                               // 复位 → 选中置空 → 框藏起来 ✓
+            ok('★★ P103：开门复位（选中置空）→ 方框又藏起来了；再选中会重新闪一次',
+                !frameEl.classList.contains('is-on'));
+            /* ★ 这里用 secondPlayBtn：playBtn 刚被拖过（它那一下 click 会被吞掉 ✓） */
+            secondPlayBtn.fire('click', { target: secondPlayBtn });
+            ok('★ P103：再选中 → 又闪烁出现（is-on 重新挂上 ✓）',
+                frameEl.classList.contains('is-on') && frameEl.style.transform === at(secondPlayBtn));
+            /* ★ 收个尾：把 playBtn 上那枚"拖完要吞一下 click"的标志位清掉
+               （每次 pointerdown 都会清 ✓）—— 不然后面的测试点它会被吞 ✗ */
+            playBtn.fire('pointerdown', { target: playBtn, button: 0, pointerId: 32, clientX: 10, clientY: 10 });
+            playBtn.fire('pointerup', { target: playBtn, pointerId: 32, clientX: 10, clientY: 10 });
+            PS.close();
+        })();
+
+        /* ============================================================
+           ★★ P102：卡带表面那层蒙版 ——「正在运行…」→ 点一下「停止运行？」→
+           再点一下：黑幕 → 关掉游戏 → **直接**渐出 → 露出这条的内容；蒙版闪烁消失 ✓
+           ============================================================ */
+        const veilTextOf = function (b) {
+            const v = b.querySelectorAll('.play-cart-veil-text')[0];
+            return v ? String(v.textContent) : '';
+        };
+        const armedCount = function () {
+            return btns.filter(function (b) { return b.classList.contains('is-armed'); }).length;
+        };
+
+        PS.open(trigger);
+        playBtn.fire('click', { target: playBtn });
+        startBtnEl.fire('click', { target: startBtnEl });
+        flushIntro();
+        ok('★★ P102：这一局跑起来之后，那张卡带表面盖上「正在运行…」（is-running + 半透明黑）',
+            playBtn.classList.contains('is-running') && !playBtn.classList.contains('is-armed') &&
+            veilTextOf(playBtn) === '正在运行…' &&
+            playStage.querySelectorAll('.play-frame').length === 1,
+            playBtn.className + ' / ' + veilTextOf(playBtn));
+        ok('★ P102：别的卡带表面没有蒙版', btns.every(function (b) {
+            return b === playBtn || (!b.classList.contains('is-running') &&
+                !b.classList.contains('is-armed'));
+        }));
+
+        /* 第一下：红蒙版 + 「停止运行？」—— **还没停** ✓ */
+        playBtn.fire('click', { target: playBtn });
+        ok('★★ P102：点第一下 → 换成「停止运行？」（is-armed），**游戏还在跑**（没被直接关掉）',
+            playBtn.classList.contains('is-armed') && !playBtn.classList.contains('is-running') &&
+            veilTextOf(playBtn) === '停止运行？' &&
+            playStage.querySelectorAll('.play-frame').length === 1,
+            playBtn.className + ' / ' + veilTextOf(playBtn));
+        ok('★ P102：这一下也**没有**开黑幕（只是确认 ✓）',
+            !curtain.classList.contains('is-in') && !stage.classList.contains('is-starting'));
+
+        /* 再点一下：黑幕 → 全黑才关游戏 → **直接**渐出 ✓ */
+        playBtn.fire('click', { target: playBtn });
+        ok('★★ P102：第二下 → 黑幕渐入（游戏此刻还在跑，全黑之后才关 ✓）',
+            curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            playStage.querySelectorAll('.play-frame').length === 1);
+        ok('★ P102：这一拍排的是幕布渐入的 250ms', pending(250).length === 1,
+            String(pending(250).length));
+        firePending(250);
+        ok('★★ P102：全黑那一刻：游戏关掉了（iframe 拔掉、退回这条游戏的详情页）',
+            playStage.querySelectorAll('.play-frame').length === 0 &&
+            stage.dataset.state === 'game');
+        ok('★★ P102：而且**直接**渐出黑幕 —— 没有开场那 0.45s 停顿（队列里没有 450）',
+            curtain.classList.contains('is-out') && pending(450).length === 0,
+            '450=' + pending(450).length);
+        ok('★★ P102：卡带表面那层蒙版开始**闪烁消失**（is-veil-out，红/黑/字一起）',
+            playBtn.classList.contains('is-veil-out') &&
+            (playBtn.classList.contains('is-armed') || playBtn.classList.contains('is-running')),
+            playBtn.className);
+        firePending(400);                        // 幕布渐出那条
+        firePending(400);                        // 蒙版闪烁消失那条
+        ok('★★ P102：收尾干净 —— 幕布三个类 + 卡带蒙版三个类全没了，游戏确实停了',
+            !curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+            !playBtn.classList.contains('is-running') && !playBtn.classList.contains('is-armed') &&
+            !playBtn.classList.contains('is-veil-out') &&
+            playStage.querySelectorAll('.play-frame').length === 0,
+            playBtn.className);
+
+        /* 确认之后又去点别的卡带 → 那一下作废 ✓ */
+        playBtn.fire('click', { target: playBtn });
+        startBtnEl.fire('click', { target: startBtnEl });
+        flushIntro();
+        playBtn.fire('click', { target: playBtn });          // 第一下 → is-armed
+        ok('★（前置）已经进入"停止运行？"确认态', armedCount() === 1);
+        otherBtn.fire('click', { target: otherBtn });        // 点别的卡带（会停掉这一局）
+        ok('★★ P102：点了别的卡带 → 那个"确认"作废：蒙版开始闪掉、旧的一局也停了',
+            playBtn.classList.contains('is-veil-out') &&
+            playStage.querySelectorAll('.play-frame').length === 0,
+            playBtn.className);
+        firePending(400);                        // 蒙版闪完 → 三个类收干净 ✓
+        ok('★★ P102：闪完之后一张都不剩（没有 is-armed / is-running / is-veil-out）',
+            btns.every(function (b) {
+                return !b.classList.contains('is-armed') && !b.classList.contains('is-running') &&
+                    !b.classList.contains('is-veil-out');
+            }), 'armed=' + armedCount());
+        PS.close();
+
+        /* ============================================================
+           ★★ P104：**空卡带**（没写 src 的那种，比如 md样式）拖进"正在跑游戏"的游戏区 →
+           和正常卡带一模一样：黑幕渐入 → 全黑才关掉旧的一局 → 渐出黑幕；
+           只是把"加载新游戏"换成"显示这张卡带的 md 页" ✓
+           ============================================================ */
+        const emptyIdx = unity.findIndex(function (w) { return !w.src; });
+        const emptyBtn = emptyIdx >= 0 ? btns[emptyIdx] : null;
+        ok('★（前置）数据里有一条"空卡带"（没写 src）：' +
+            (emptyBtn ? unity[emptyIdx].id : '（没有）'), !!emptyBtn);
+        if (emptyBtn) {
+            window.fetch = function (url) {
+                return syncFetch({ ok: true, text: function () { return '# 空卡带的 md:' + url; } });
+            };
+            PS.open(trigger);
+            playBtn.fire('click', { target: playBtn });          // 先跑起一局
+            startBtnEl.fire('click', { target: startBtnEl });
+            flushIntro();
+            ok('★（前置）有一局在跑',
+                playStage.querySelectorAll('.play-frame').length === 1);
+
+            emptyBtn.fire('pointerdown', { target: emptyBtn, button: 0, pointerId: 41, clientX: 10, clientY: 10 });
+            emptyBtn.fire('pointermove', { target: emptyBtn, pointerId: 41, clientX: 20, clientY: 60 });
+            emptyBtn.fire('pointerup', { target: emptyBtn, pointerId: 41, clientX: 20, clientY: 60 });
+            ok('★★ P104：空卡带拖进来也一样**立刻起幕布**（不闪 md、不停 0.4s），旧的一局还在跑',
+                curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+                playStage.querySelectorAll('.play-frame').length === 1 &&
+                !stage.classList.contains('is-starting'),
+                curtain.className);
+            ok('★ P104：排的是幕布渐入的 250ms（队列里没有 0.4s 那个停顿 ✓）',
+                pending(250).length === 1 && pending(400).length === 0,
+                '250=' + pending(250).length + ' / 400=' + pending(400).length);
+            firePending(250);
+            ok('★★ P104：全黑那一刻：**旧的一局关掉了**（iframe 拔掉、退回详情页），'
+                + '而且**没有**挂新游戏（空卡带没有 src ✓）',
+                playStage.querySelectorAll('.play-frame').length === 0 &&
+                stage.dataset.state === 'game', stage.dataset.state);
+            ok('★★ P104："加载新游戏"换成了"显示这张卡带的 md" —— 版式切到 README、内容是它那页 ✓'
+                + '（★ 这页 md 在更早的 P91 测试里已经被取过一次，P91 有缓存 → 内容不会是刚才那个桩，'
+                + '所以这里只断言"切过去了、而且非空" ✓）',
+                stage.classList.contains('is-readme') &&
+                readmeBox.innerHTML.length > 0,
+                readmeBox.innerHTML.slice(0, 48));
+            firePending(450);
+            ok('★ P104：然后照常走"剩下的动画"：0.45s 到 → 幕布渐出 ✓',
+                curtain.classList.contains('is-out'));
+            firePending(400);
+            ok('★★ P104：收尾干净（幕布类摘掉、舞台上没有 iframe、内容留在 md 页）',
+                !curtain.classList.contains('is-in') && !curtain.classList.contains('is-out') &&
+                playStage.querySelectorAll('.play-frame').length === 0 &&
+                stage.classList.contains('is-readme'));
+
+            /* 没在跑游戏时：不演黑幕，直接把 md 铺出来 ✓ */
+            PS.close();
+            PS.open(trigger);
+            emptyBtn.fire('pointerdown', { target: emptyBtn, button: 0, pointerId: 42, clientX: 10, clientY: 10 });
+            emptyBtn.fire('pointermove', { target: emptyBtn, pointerId: 42, clientX: 20, clientY: 60 });
+            emptyBtn.fire('pointerup', { target: emptyBtn, pointerId: 42, clientX: 20, clientY: 60 });
+            ok('★★ P104：没在跑游戏时拖空卡带 → **不演黑幕**，直接把它的 md 铺出来 ✓',
+                !curtain.classList.contains('is-in') && !stage.classList.contains('is-starting') &&
+                stage.classList.contains('is-readme') && readmeBox.innerHTML.length > 0);
+            PS.close();
+            delete window.fetch;
+        }
+
+        global.setTimeout = toKeep;                            // ★ 快照还原（后面还有异步小节）
+        global.clearTimeout = ctoKeep;
     })();
 
     /* ============================================================

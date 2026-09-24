@@ -219,6 +219,13 @@ textarea {
     --play-wash: rgba(255, 255, 255, 0.06);      /* 代码底 / 表头底 */
     --play-line: rgba(255, 255, 255, 0.16);      /* 表格边框 / 分隔线 */
 
+    /* ★★ P103：选中框的颜色（你自己改这一个值就行）——
+       默认按你说的取 --text。
+       ⚠ 提醒：卡带栏在**深浅两套主题里都是暗的**，而浅色主题下 --text 是近黑 →
+         那时候框会不太看得清。想让它一直亮，把这里改成 var(--play-ink)（面板里那套
+         固定的浅色）或者一个写死的颜色即可 ✓ */
+    --cart-frame: #E1E1E1;
+
     /* 多媒体面板（四列）用的两个值：
        --panel-line 是分隔细线（刻意低调，不用 --border 那个高饱和红）；
        --panel-pad  比页面 gutter 略小 —— 四列并排时内容宽度很紧张。 */
@@ -1262,10 +1269,14 @@ img {
     background: rgba(225, 25, 25, 0.08);
 }
 
-/* 展开游乐区：导航按键让位，游戏控件上岗（瞬时，不做过渡 —— 你要的就是"那一瞬间"） */
-body.sidebar-open .logo,
-body.sidebar-open .nav-links,
-body.sidebar-open .theme-toggle {
+/* 展开游乐区：导航链接让位，游戏控件上岗（瞬时，不做过渡 —— 你要的就是"那一瞬间"）
+   ★ P93b（你的要求）：**只藏导航链接**。logo（站名）与主题切换键留在原地 ——
+     它们不是"跳走"的入口（主题键在游戏里还用得上），而且 logo 是这条竖栏的题头，
+     藏了整条栏会显得没头。
+   ★ 注意 logo 仍然是 `#home` 链接：展开时点它会把**面板下面那一页**滚回首页
+     （面板本身不动、也不会关）。要"看得见但点不动"就在这组里加一句
+     `body.sidebar-open .logo { pointer-events: none; }`。 */
+body.sidebar-open .nav-links {
     display: none;
 }
 
@@ -4884,6 +4895,101 @@ body.sidebar-open .play-sidebar {
     gap: 12px;
 }
 
+/* ============================================================================
+   ★★ P98：卡带登场前的"标题卡"——「游戏卡带」
+   ----------------------------------------------------------------------------
+   时序（JS 那边串的，见 sidebar.js 的 revealCarts）：
+     面板滑到位 → 这张字**闪烁出现** → 停 1s → **开始渐隐** →
+     渐隐开始后 0.25s → 卡带才逐个冒出来（两个过场有一小段重叠，正好接上）✓
+   · 绝对定位 + `inset: 0` + flex 居中：**不占布局**（否则它淡到 0 之后还会
+     把卡带往下顶一截 ✗ —— 它是过场，不能改变轨道里东西的位置）。
+     `.play-rail` 本来就是 position: relative ✓（P70 给那条光带用的）。
+   · 竖排：这条轨道只有 75px 宽，四个字横排挤不下 —— 和卡带名字同一套写法 ✓。
+   · 闪烁 = 一串 opacity 台阶（keyframes），不是 JS 定时器 ✓；渐隐用**另一条**
+     keyframes（`forwards`）而不是 transition —— transition 和 animation 抢同一个
+     属性时，谁压谁要看"动画有没有被撤掉"，容易出玄学 ✗，这里两条都是动画，确定 ✓。
+   ============================================================================ */
+.play-rail-title {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    writing-mode: vertical-rl;
+    letter-spacing: 0.3em;
+    font-size: 0.95rem;
+    color: var(--play-ink, #E1E1E1);
+    opacity: 0;
+    visibility: hidden;              /* ★ 藏着的时候也点不到 / Tab 不到（和卡带同一套） */
+    pointer-events: none;
+    user-select: none;
+    z-index: 1;                      /* 压在卡带上面：渐隐的同时卡带在下面冒出来 ✓ */
+}
+
+.play-rail-title.is-in {
+    visibility: visible;
+    animation: railTitleFlicker 520ms steps(1, end) both;
+}
+
+/* 渐隐：从闪烁结束时的"亮着"开始退（两条都是动画，见上面的说明） */
+.play-rail-title.is-in.is-out {
+    animation: railTitleOut 400ms ease-out forwards;
+}
+
+@keyframes railTitleFlicker {
+    0% {
+        opacity: 0;
+    }
+
+    8% {
+        opacity: 1;
+    }
+
+    18% {
+        opacity: 0.12;
+    }
+
+    30% {
+        opacity: 1;
+    }
+
+    42% {
+        opacity: 0.28;
+    }
+
+    54% {
+        opacity: 1;
+    }
+
+    66% {
+        opacity: 0.55;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes railTitleOut {
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    /* 不演这套过场：字直接不出现（卡带立刻可见，见 P97 那段降级）✓ */
+    .play-rail-title,
+    .play-rail-title.is-in {
+        animation: none;
+        visibility: hidden;
+    }
+}
+
 /* 一张卡带：编号在上，名字**竖排**在下面 ——
    75px 宽横着放不下 "Boom Shooting"，竖排正好是卡带/书脊那个样子
    （竖排这个写法站里已经有先例：.df-v） */
@@ -4895,16 +5001,114 @@ body.sidebar-open .play-sidebar {
     width: 100%;
     min-height: 112px;
     padding: 10px 0 12px;
-    background: transparent;
+    /* ★★ P94：卡带底色改成**不透明**的 --bg-alt（原来是 transparent，
+       面板那条模糊底会透过来；而且浅色主题下 --text 是近黑，透过去根本读不清 ✗）。
+       --bg-alt 是**跟着主题走**的：暗色主题 #191919 / 浅色主题 #e5e5e5 ——
+       和卡带里的字（--text / --text-muted）正好配成"深底浅字 / 浅底深字"✓。 */
+    background-color: var(--bg-alt);
     border: 1px solid var(--border);
     border-radius: 6px;
     color: var(--text-muted);
     font-family: inherit;
-    transition: color 0.2s, border-color 0.2s, background 0.2s;
+    position: relative;              /* ★ P94：图标 / 文字 / 红遮罩三层都相对卡带定位 */
+    isolation: isolate;              /* ★ 把那三层的 z-index 关在卡带内部，别和别人抢 */
+    overflow: hidden;                /* ★ 图标铺满时按卡带的圆角裁掉超出的部分 */
+    transition: color 0.2s, border-color 0.2s;
     /* ★★ P80：卡带是自己实现的指针拖拽，所以要拦住浏览器对这块区域的
        手势接管（触屏上不写它，拖动会被当成滚动而中途 cancel）。
        代价：在这张卡带上不能拖着滚动 —— 卡带栏现在只有两张，无所谓。 */
     touch-action: none;
+}
+
+/* ============================================================================
+   ★★ P97：卡带的登场 —— 游乐区**滑到位之后**才逐个"冒"出来
+   ----------------------------------------------------------------------------
+   要的效果：面板还在滑的那 450ms 里，卡带栏是**空的**；滑到位之后它们才
+   一个接一个冒出来（淡入 + 先放大一点点、再落回原样）✓。
+   · **藏**：`opacity: 0` 写在 `.play-carts .play-cart` 上 —— 选择器必须**限定在
+     卡带栏内部**：拖动时浮起的那张是 `.play-cart` 的克隆、挂在 body 上，
+     要是写成全体 `.play-cart`，它一复制出来就是透明的、等于拖了个空气 ✗✗。
+   · **冒**：`is-in`（JS 在面板滑完那一刻挂到 .play-carts 上）触发 `cartPop`，
+     每张的先后靠 `--cart-i`（卡带序号，JS 写进样式里）错开 ✓。
+   · `animation-fill-mode: both` 是关键：还没轮到自己时保持 0% 的样子（藏着），
+     所以看起来是"一个接一个冒"，而不是"全都在原地放大" ✓。
+   · **降级**：`prefers-reduced-motion` 下不演 —— 直接可见（连藏都不藏）✓。
+   · ★ 这段**必须排在 `.play-cart` 基类之后**：自检里好几条用"文件里第一处
+     `.play-cart {`"当基类（`firstRule`），插在前面会把基类认错 ✗。
+   ============================================================================ */
+.play-carts .play-cart {
+    opacity: 0;
+    /* ★ 不只是透明：滑进来那 450ms 里它既点不到、也 Tab 不到 ✓
+       （纯 opacity: 0 的元素照样能被点和 Tab —— 那时卡带还在屏幕外滑进来） */
+    visibility: hidden;
+}
+
+.play-carts.is-in .play-cart {
+    visibility: visible;
+    animation: cartPop 520ms ease-out both;
+    animation-delay: calc(var(--cart-i, 0) * 90ms);
+}
+
+@keyframes cartPop {
+    0% {
+        opacity: 0;
+        transform: scale(0.84);
+    }
+
+    55% {
+        opacity: 1;
+        transform: scale(1.06);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .play-carts .play-cart {
+        opacity: 1;
+        /* ★ 这一行不能漏：上面那条 visibility: hidden 是给"演"用的，
+           不演的时候必须把它也放回来 —— 否则卡带永远看不见 ✗ */
+        visibility: visible;
+    }
+
+    .play-carts.is-in .play-cart {
+        animation: none;
+    }
+}
+
+/* ★★ P94：卡带图标（路径在 data/works.js 的 icon 字段里预留）。
+   · 铺满上下边界 → height: 100% + object-fit: cover（左右按需要裁）✓
+   · 80% 透明度（用户定的）✓
+   · z-index: 0 —— 在文字下面；整块**不吃指针事件**：拖拽/点选还是卡带自己的 ✓
+   · 路径不存在时 sidebar.js 的 onerror 会把整个 <img> 摘掉 → 退回纯色卡带 ✓ */
+.play-cart-icon {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.8;
+    z-index: 0;
+    pointer-events: none;
+    -webkit-user-drag: none;
+}
+
+/* ★★ P94：悬停 / 选中的红**叠一层上去**，不是换背景 ——
+   换背景就得写 rgba，那又把"不透明"打回半透明了 ✗。
+   这层盖在图标之上（z-index: 2），所以有图标的卡带选中时也看得出红 ✓ */
+.play-cart::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: rgba(225, 25, 25, 0.16);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
 }
 
 /* ★★ P80：这里**不再需要**恢复 `-webkit-user-drag`。
@@ -4916,14 +5120,46 @@ body.sidebar-open .play-sidebar {
 .play-cart:hover {
     color: var(--accent);
     border-color: var(--accent);
-    background: rgba(225, 25, 25, 0.06);
 }
 
-/* 选中的那一张（JS 写 aria-pressed）—— 和 .theme-toggle:hover 同一套红 */
+.play-cart:hover::after {
+    opacity: 0.65;
+}
+
+/* 选中的那一张（JS 写 aria-pressed）—— 和 .theme-toggle:hover 同一套红。
+   ★★ P103：**不再**给它那层淡红蒙版了（你说只保留悬停那份 ✓）——
+   选中现在由 .play-cart-frame 那个方框表达（见下面 P103 那段）✓ */
 .play-cart[aria-pressed="true"] {
     color: var(--accent);
     border-color: var(--accent);
-    background: rgba(225, 25, 25, 0.08);
+}
+
+/* ============================================================================
+   ★★ P95：拖动时**源卡带**变成"空槽位"（看起来像被拿下来了）
+   ----------------------------------------------------------------------------
+   现象（你要的）：把卡带拖起来，卡带栏里原位那一张应该只剩一个**空槽**，
+   内容（编号 / 名字 / 图标）跟着手上那一张走了 —— 一眼就知道"这盒被我拿走了" ✓。
+   ★ 用 `visibility: hidden` 而不是 display / 删元素：
+     内容还在 DOM 里、尺寸一个像素都不变 —— 卡带栏**不会跳**（跳一下就露馅了 ✗）。
+   ★ 槽位怎么画：比卡带更深的底 + **虚线**边 + 内阴影（凹进去的那点光）——
+     深浅两套主题都看得出"这里空着"（`--panel-line` 两套都有值 ✓）。
+   ★★ 这几条**必须排在 :hover / [aria-pressed] 的后面**：
+     `.play-cart.is-taken::after` 和 `.play-cart:hover::after` 特异性一样（都是 0,2,1），
+     靠源码顺序压住它；否则指针捕获期间那个残留的 :hover 会在空槽上留一层红 ✗。
+   ============================================================================ */
+.play-cart.is-taken {
+    background-color: rgba(0, 0, 0, 0.35);
+    border-style: dashed;
+    border-color: var(--panel-line);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.play-cart.is-taken > * {
+    visibility: hidden;
+}
+
+.play-cart.is-taken::after {
+    opacity: 0;
 }
 
 .play-cart-no {
@@ -4939,6 +5175,161 @@ body.sidebar-open .play-sidebar {
     font-size: 0.66rem;
     letter-spacing: 0.16em;
     color: var(--text);
+}
+
+/* ★ P94：编号 / 名字压在图标上面（每条卡带单独一条规则写在上面了，
+   这里只是补一层 z-index —— 图标是 z-index: 0，所以这两个得往上抬） */
+.play-cart-no,
+.play-cart-name {
+    position: relative;
+    z-index: 1;
+}
+
+/* ============================================================================
+   ★★ P103：选中框 —— 跟着"当前选中的那张卡带"走的一个方框
+   ----------------------------------------------------------------------------
+   行为（JS 那边算位置，见 sidebar.js 的 syncCartFrame）：
+     · 没选中任何卡带 → 整块隐藏 ✓
+     · 选中一张        → 在**那张卡带的位置**闪烁出现（cartFrameIn）✓
+     · 已选中时又选别的 → 框**平移**过去 —— `ease-in-out` 就是"先慢后快再慢" ✓
+   · 比卡带外轮廓大 1px：JS 写 `width = 卡带宽 + 2`、`transform = 卡带位置 - 1` ——
+     站点开头那条 `* { box-sizing: border-box }` 让这 +2 **含**了 1px 边框，
+     所以外面那圈间隙正好是 1px ✓（不是 2px）。
+   · `z-index: 4` —— 压在卡带（含那层蒙版 z-index 3）上面 ✓
+   · `pointer-events: none`：它只是个框，点击还得落在卡带上 ✓
+   · 颜色走 `--cart-frame`（默认 = `--text`，见 :root 那一行）——
+     ⚠ 但卡带栏在**深浅两套主题里都是暗的**：浅色主题下 `--text` 是近黑，
+     框会不太看得清。想让它一直亮就把 `--cart-frame` 改成 `var(--play-ink)` ✓
+   ============================================================================ */
+.play-cart-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 4;
+    border: 1px solid var(--cart-frame, var(--text));
+    border-radius: 7px;              /* 卡带是 6px 圆角 —— 往外 1px，所以 7px 是同心 ✓ */
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    /* ★ "先慢后快再慢" = ease-in-out ✓（只动 transform：合成器属性，不重排 ✓） */
+    transition: transform 420ms ease-in-out;
+    will-change: transform;
+}
+
+/* ★ 第一次出现（或复位后第一次选中）：位置**直接摆到位**，不演那段平移 ✓
+   （否则它会从轨道左上角滑过来，而不是"在那张卡带的位置闪烁出现" ✗） */
+.play-cart-frame.is-placing {
+    transition: none;
+}
+
+.play-cart-frame.is-on {
+    visibility: visible;
+    animation: cartFrameIn 360ms steps(1, end) both;
+}
+
+@keyframes cartFrameIn {
+    0% {
+        opacity: 0;
+    }
+
+    18% {
+        opacity: 1;
+    }
+
+    40% {
+        opacity: 0.15;
+    }
+
+    62% {
+        opacity: 1;
+    }
+
+    82% {
+        opacity: 0.5;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+/* ============================================================================
+   ★★ P102：卡带表面的那层蒙版 ——「正在运行…」/「停止运行？」
+   ----------------------------------------------------------------------------
+   两段式（JS 那边串的，见 sidebar.js 的 makeCart / stopRunningGame）：
+     · 这一局正在跑 → **半透明黑**蒙版 + 「正在运行…」
+     · 点它第一下   → **完全不透明的主题红**纯色蒙版 + 「停止运行？」（还没停！）
+     · 再点一下     → 游戏区渐入黑幕 → 全黑后关掉游戏 → **直接**渐出黑幕，
+                      露出这条游戏的内容；同时蒙版**闪烁消失** ✓
+   · z-index: 3 —— 盖住图标(0) / 编号名字(1) / 那层红遮罩(2) ✓
+   · pointer-events: none —— 点的是卡带自己（这层只是"贴在表面的膜"）✓
+   · 文字**竖排**：这条轨道只有 75px 宽，横排五个字塞不下（和卡带名字同一套写法）✓
+   ============================================================================ */
+.play-cart-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);      /* 半透明黑 = 正在运行 ✓ */
+    border-radius: inherit;               /* 跟着卡带的圆角 ✓ */
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.play-cart-veil-text {
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    color: var(--play-toast-ink, #fff);
+}
+
+.play-cart.is-running .play-cart-veil {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* 「停止运行？」—— **完全不透明**的主题红（没有 alpha）✓ */
+.play-cart.is-armed .play-cart-veil {
+    visibility: visible;
+    opacity: 1;
+    background: var(--accent);
+}
+
+/* 蒙版闪烁消失（点了"停止运行？"之后）：几个台阶 → 0，forwards 保持透明，
+   等 JS 到点把三个类一起收掉 ✓
+   ★ 必须排在上面两条**之后**：特异度相同（0,3,0），靠源码顺序压住 ✓ */
+.play-cart.is-veil-out .play-cart-veil {
+    visibility: visible;
+    animation: cartVeilOut 400ms steps(1, end) forwards;
+}
+
+@keyframes cartVeilOut {
+    0% {
+        opacity: 1;
+    }
+
+    18% {
+        opacity: 0.1;
+    }
+
+    36% {
+        opacity: 1;
+    }
+
+    54% {
+        opacity: 0.15;
+    }
+
+    72% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 0;
+    }
 }
 
 /* ----- 右列：顶栏 + 舞台 ----- */
@@ -5037,6 +5428,9 @@ body.sidebar-open .play-sidebar {
     z-index: 99999;                  /* 和回执同级：拖动时也不该被谁压住 */
     pointer-events: none;
     opacity: 0.85;
+    /* ★ P96：位置在 JS 里逐帧缓动（延迟跟手），这里只声明"这一层会被动"——
+       交给合成器，拖动期间不触发重排/重绘 ✓ */
+    will-change: transform;
     border-color: var(--accent);
     color: var(--accent);
     background: var(--navbar-bg, rgba(0, 0, 0, 0.55));
@@ -5070,6 +5464,104 @@ body.sidebar-open .play-sidebar {
 
 .play-body[data-state="play"] .play-stage {
     pointer-events: auto;
+}
+
+/* ============================================================================
+   ★★ P99：开场的黑幕 + md 内容的"闪烁消失"
+   ----------------------------------------------------------------------------
+   时序（JS 那边串的，见 sidebar.js 的 startGame）：
+     点开始 / 拖到舞台上
+       ├─ 0ms    游戏区里那页 md 内容**闪烁消失**（playMdOut，250ms）
+       ├─ 250ms  黑幕**渐入**（playCurtainIn，250ms）
+       ├─ 500ms  幕布完全不透明 → **这一刻才开始载入游戏**（建 iframe）
+       ├─ 950ms  再等 0.45s → 幕布**渐出**（playCurtainOut，400ms）
+       └─ 1350ms 收尾（类摘掉，md 内容也回到可见）
+   · z-index: 2 —— 盖住 iframe 和那层 "LOADING…"，但让游戏回执（.play-msg，3）留在上面 ✓
+     （Unity 起来时的白闪、载入条都被挡在幕布后面，这正是这一步的意义）。
+   · ★★ 它是 `.play-stage` 的**兄弟**（不是子元素）：`stopGame()` 会
+     `playStage.replaceChildren()` 把 stage 清空 —— 幕布住在里面的话，
+     第一次停游戏就被连根拔掉了 ✗（自检里有一条守着这个位置）。
+   · `pointer-events: none`：它是"贴在玻璃上的黑"，不该吃游戏的鼠标 ✓。
+   · 两条 keyframes 分别管"渐入 / 渐出"（同一个 opacity，用类切换，不用 transition ——
+     和 P98 那张标题卡同一个理由：动画和过渡抢属性会出玄学）✓。
+   · 降低动效时不演：JS 根本不加这几个类（所以这里不用再写一套 @media 降级）✓。
+   ============================================================================ */
+.play-curtain {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    /* ★ P101：幕布上只有那行「游玩注意」，用 flex 把它居中 ✓ */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.play-curtain.is-in {
+    visibility: visible;
+    animation: playCurtainIn 250ms ease-out forwards;
+}
+
+.play-curtain.is-in.is-out {
+    animation: playCurtainOut 400ms ease-out forwards;
+}
+
+@keyframes playCurtainIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes playCurtainOut {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+/* 第一拍：md 内容闪烁消失（几个 opacity 台阶 → 硬切才叫"闪"）。
+   ★ 有 README 的条目闪的就是那页 md；没有 README 的（规格卡 + 开始游戏）
+     闪的是规格卡 —— 不然那一步会像是没做 ✓。
+   ★ forwards：闪完保持透明；整个过场收尾时 JS 摘掉 is-starting，它自然回来 ✓ */
+.play-body.is-starting .play-readme,
+.play-body.is-starting .play-spec {
+    animation: playMdOut 250ms steps(1, end) forwards;
+}
+
+@keyframes playMdOut {
+    0% {
+        opacity: 1;
+    }
+
+    18% {
+        opacity: 0.1;
+    }
+
+    34% {
+        opacity: 1;
+    }
+
+    52% {
+        opacity: 0.18;
+    }
+
+    70% {
+        opacity: 0.8;
+    }
+
+    100% {
+        opacity: 0;
+    }
 }
 
 /* ----- 游戏发来的回执（P86）：Unity postMessage 一句，这里右下角（左下角）显示一行 -----
@@ -5145,6 +5637,63 @@ body.sidebar-open .play-sidebar {
     font-size: 0.88rem;
     line-height: 1.8;
     color: var(--play-ink, #E1E1E1);
+}
+
+/* ============================================================================
+   README 的滚动条（P93e）
+   ----------------------------------------------------------------------------
+   面板在深浅两套主题里都是**暗的** → 滚动条也得走 --play-* 那一套，
+   不能跟主题翻：浅色主题下浏览器默认那条是浅灰白槽 + 深色滑块，
+   糊在暗面板上非常突兀 ✗。
+   ★ 两套属性都写：标准属性（Firefox / 新 Chromium）+ `::-webkit-*`（Safari、老 Chromium）。
+     ⚠ 两套**不是叠加**的，各浏览器只会用其中一套 —— CSSWG 2024-04 的决议是
+       "只要 `scrollbar-width` / `scrollbar-color` 不是初始值，就忽略 legacy 的
+       `-webkit-scrollbar` 伪元素"（[csswg-drafts#9856](https://github.com/w3c/csswg-drafts/issues/9856)）。
+       所以实际效果：
+         · Chrome 121+ / Firefox → 走标准那套：细滚动条 + `--play-line` 滑块 + 透明轨道
+           （**没有** hover 变红、也没有 6px/10px 那套几何 —— 标准属性管不了 hover）；
+         · Safari / 老 Chromium → 走 `::-webkit-*`：透明槽 + 6px 圆角滑块、指上去亮主题红。
+       两套都留着才不会有一个浏览器掉回"系统默认那条粗灰条"✗。
+   ★ 和右侧卡带栏的做法**故意不同**：那条是纯装饰，直接 `width: 0` 藏掉；
+     README 是长文，**必须看得出这里还能滚** —— 所以留一条细的（10px 槽 / 6px 滑块），
+     平时半透明，指上去才亮主题红 ✓。
+   ★ 滑块"细"是用 `border: 2px solid transparent` + `background-clip: content-box`
+     做的（槽 10px、滑块视觉 6px、居中）。所以 hover 那条**必须用 background-color**
+     而不是 `background` 简写 —— 简写会把 background-clip 重置回 border-box，
+     滑块会在指上去的瞬间从 6px 变成 10px（跳一下）✗。
+   ============================================================================ */
+.play-readme {
+    scrollbar-width: thin;                            /* Firefox：细滚动条 */
+    scrollbar-color: var(--play-line) transparent;     /* 滑块 / 轨道（不跟主题翻 ✓） */
+}
+
+.play-readme pre.md-code {
+    scrollbar-width: thin;                            /* 代码块的横向滚动条同款 */
+    scrollbar-color: var(--play-line) transparent;
+}
+
+.play-readme::-webkit-scrollbar,
+.play-readme pre.md-code::-webkit-scrollbar {
+    width: 10px;
+    height: 8px;
+}
+
+.play-readme::-webkit-scrollbar-track,
+.play-readme pre.md-code::-webkit-scrollbar-track {
+    background: transparent;                          /* 暗面板上留白比画一条槽干净 ✓ */
+}
+
+.play-readme::-webkit-scrollbar-thumb,
+.play-readme pre.md-code::-webkit-scrollbar-thumb {
+    background-color: var(--play-line);
+    background-clip: content-box;                      /* ★ 见上面那条说明 */
+    border: 2px solid transparent;
+    border-radius: 999px;
+}
+
+.play-readme::-webkit-scrollbar-thumb:hover,
+.play-readme pre.md-code::-webkit-scrollbar-thumb:hover {
+    background-color: var(--accent);                   /* ★ 只改颜色，别用简写 */
 }
 
 /* ----- 顶栏化：规格 + 开始游戏挤成一行 ----- */
@@ -5423,31 +5972,87 @@ body.sidebar-open .play-sidebar {
     color: var(--text-muted);
 }
 
-/* ----- 「游玩注意」（P84）：游戏区下方的一块提示，内容来自 data/works.js -----
-   开关是 works.js 里的 noticeOn；没有它 / 关着 → 这块整块不出现。
-   ★★ 默认隐藏用的是 hidden **属性**（js 摘它）—— 所以这里**千万不能**写
-      display：author 的 display 会盖掉 UA 的 [hidden] { display: none }，
-      那块就永远藏不住了（经典坑，和 .win-zoom 那一处是同一个道理）。
-   ★ max-height + overflow-y：内容写长了不许把上面的游戏区挤没。 */
-.play-notice {
-    flex: 0 0 auto;
-    max-height: 26dvh;
-    overflow-y: auto;
-    padding: 12px 16px;
-    border: 1px solid var(--panel-line);
-    border-left: 2px solid var(--accent);
-    background: rgba(225, 25, 25, 0.05);
+/* ----- ★★ P101：「游玩注意」= 黑幕上的那行字（原来在游戏区**下方**，P84）-----
+   内容与开关还是 data/works.js 的 noticeOn / notice（一个字段都没动 ✓）。
+   时序（JS 那边串的，见 sidebar.js 的 startGame）：
+     黑幕**完全不透明之后** 闪出来（noticeFlicker，400ms）→ 停 **3s** →
+     闪掉（noticeOut，400ms）→ **然后才**接黑幕剩下的动画（停 0.45s → 渐出）✓
+   · 它住在 .play-curtain 里 —— 也就是"贴在黑幕上的字" ✓；
+     幕布自己 `pointer-events: none`，所以这行字也不会吃鼠标 ✓。
+   · 默认不可见：opacity 0 + visibility: hidden（**不用** hidden 属性 ——
+     可见性由 is-on / is-out 两个类管，和 P98 那张标题卡同一套语言 ✓）。
+   ============================================================================ */
+.play-curtain-notice {
+    /* ★★ P101b：这一层**撑满整个游戏区**（幕布铺满 → 它也铺满）——
+       字在正中，容器本身不画任何东西（无边框、无底色）✓ */
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
 }
 
-.play-notice-title {
-    margin: 0 0 6px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    color: var(--accent);
+.play-curtain-notice.is-on {
+    visibility: visible;
+    animation: noticeFlicker 400ms steps(1, end) both;
+}
+
+.play-curtain-notice.is-on.is-out {
+    animation: noticeOut 400ms ease-out forwards;
+}
+
+@keyframes noticeFlicker {
+    0% {
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 1;
+    }
+
+    24% {
+        opacity: 0.12;
+    }
+
+    40% {
+        opacity: 1;
+    }
+
+    56% {
+        opacity: 0.3;
+    }
+
+    72% {
+        opacity: 1;
+    }
+
+    86% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes noticeOut {
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
 }
 
 .play-notice-list {
+    /* ★★ P101b：去掉上下那两条线（你要求的"无边框"）——
+       整块只靠字本身站在黑幕上 ✓；宽度按内容收，再整块居中 ✓ */
+    width: fit-content;
+    max-width: min(62ch, 84%);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -5455,14 +6060,20 @@ body.sidebar-open .play-sidebar {
 
 .play-notice-item {
     position: relative;
-    padding-left: 14px;
-    font-size: 0.8rem;
-    line-height: 1.7;
-    color: var(--text-muted);
+    /* ★ 圆点在 ::before 里绝对定位在 left: 2px —— 所以这条内缩不能省
+       （字号变大之后用 em，跟着一起长 ✓） */
+    padding-left: 1em;
+    /* ★★ P101b：字号对齐 **README 的二级标题**（.play-readme h2 = 1.2rem）——
+       自检里有一条把这两个数解析出来比一比（改一边忘另一边会红 ✓）。 */
+    font-size: 1.2rem;
+    line-height: 1.8;
+    letter-spacing: 0.02em;
+    text-align: left;
+    color: var(--play-ink, #E1E1E1);
 }
 
 .play-notice-item + .play-notice-item {
-    margin-top: 4px;
+    margin-top: 6px;
 }
 
 .play-notice-item::before {

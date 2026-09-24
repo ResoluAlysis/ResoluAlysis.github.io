@@ -1,21 +1,15 @@
 # 站点 README 语法速查
 
-> 这份文件本身就是用这套语法写的 —— 你把它临时挂到某条游戏上（`works.js` 里
-> 把 `readme` 改成 `'data/readmes/_syntax.md'`）就能看到渲染后的样子。
-> 渲染器是 `js/markdown.js`：零依赖、纯函数，规则以它为准。
+> 这份文件本身就是用这套语法写的 —— 挂载到卡带上就能看到渲染后的样子...
+> 渲染器是 `js/markdown.js`：零依赖、纯函数，规则以它为准...
 
 [TOC]
 
 ## 怎么用
 
 1. 写一个 `.md`，放 `data/readmes/` 下（名字随意，建议用游戏 id，例如 `semarlog.md`）。
-2. `data/works.js` 里那条游戏加一行：
-
-```js
-readme: 'data/readmes/semarlog.md',
-```
-
-3. 选那张卡带 → 游乐区那块"说明书"就变成一页可滚动的 README。
+2. `data/works.js` 里加一行：`readme: data/readmes/semarlog.md`
+3. 选中卡带 → 游乐区"说明书"就变成一页可滚动的 README。
    不写 / 取不到 → 退回 `detail` 数组，页面永远不会空。
 
 ## 标题与目录
