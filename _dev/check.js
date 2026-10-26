@@ -812,6 +812,201 @@ section('[2ak] 解码三拍（暂不接首页）+ 终端：裸文字 / 固定（
 })();
 
 /* ============================================================
+   [2al] 标题小字：向左滚到画框左边线就停住（P110）
+   ------------------------------------------------------------
+   要的是"小字左缘撞到画框左边那条竖线就钉住，往回滚再松开"。
+   实现上最容易走歪的两条路，这里都堵住：
+     · **不能每帧用 JS 写 DOM** —— 站里的规矩是"一帧只写一次 --scroll-x，
+       其余交给 CSS 算"（见 style.css 的「视差：单一变量驱动」）；
+     · **量距离时必须先摘掉自己的 translate** —— 否则量到的是"已经挪过"的位置，
+       第一次停住了、之后每次 resize 都越量越偏。
+   ============================================================ */
+section('[2al] 标题小字：滚到画框左边线就停住（P110）');
+(function subtitleDock() {
+    const dockJs = read('js/subtitle-dock.js');
+    const dockCode = codeOnly(dockJs);
+    const htmlNoC = html.replace(/<!--[\s\S]*?-->/g, '');
+    /* ★ 认法要带意图：`.hero-content .subtitle` 这个选择器现在有**两条**规则
+       （P105 的定位一条、P110 的 translate 一条），直接 match() 抓到的是第一条 ✗ */
+    const blkAll = cssNC.match(/\.hero-content \.subtitle\s*\{[^}]*\}/g) || [];
+    const blk = blkAll.filter(s => /translate|sub-t/.test(s)).join(' ');
+
+    /* ---------- ① 接线 ---------- */
+    ok('★ P110：新增 js/subtitle-dock.js 并挂到页面上（排在 world.js 之后 —— 它要 World.onLayout）',
+        fs.existsSync(path.join(ROOT, 'js/subtitle-dock.js')) &&
+        /src="js\/subtitle-dock\.js"/.test(htmlNoC) &&
+        htmlNoC.indexOf('src="js/world.js"') < htmlNoC.indexOf('src="js/subtitle-dock.js"'),
+        'world.js@' + htmlNoC.indexOf('src="js/world.js"') +
+        ' dock@' + htmlNoC.indexOf('src="js/subtitle-dock.js"'));
+
+    /* ---------- ② 算式在 CSS 里，不在 JS 里 ---------- */
+    ok('★★ P110：位移是纯算式 `tx = max(0, --scroll-x - --sub-t)`，写在 CSS 里'
+        + '（JS 每帧不写 DOM）',
+        /translate:\s*max\(\s*0px\s*,\s*calc\(var\(--scroll-x/.test(blk) &&
+        /var\(--sub-t/.test(blk),
+        blk.replace(/\s+/g, ' ').slice(0, 140));
+    ok('★★ P110：`--sub-t` 有兜底大数 —— 脚本没跑 / 手机上不需要时，'
+        + '算式恒为 0，小字老实待在原位（不会被推到屏幕外）',
+        /var\(--sub-t,\s*999999px\)/.test(blk) && /NEVER = 999999/.test(dockJs));
+    ok('★★ P110：用 `translate` 不用 `transform`（和 P106 的进场同一个理由：'
+        + '不跟别的位移互相顶掉）',
+        !/transform/.test(blk));
+    ok('★★ P110：JS 里**没有**滚动回调 / 每帧回调 —— 滚动交给 CSS 算',
+        !/onScroll/.test(dockCode) && !/onFrame/.test(dockCode) &&
+        /World\.onLayout/.test(dockCode));
+
+    /* ---------- ③ 三个坑 ---------- */
+    ok('★★★ P110b：开屏期间**不许**量（`.page-zoom` 挂着 scale 2 → 1 的动画，'
+        + '`getBoundingClientRect()` 拿到的是缩放后的盒子 → T 差不多翻倍 → 永远撞不到线；'
+        + '这就是"首次进来不固定、开一次游戏就好"的原因）',
+        /function stable\(\)/.test(dockCode) &&
+        /classList\.contains\('intro-done'\)/.test(dockCode) &&
+        /if \(!stable\(\)\) return/.test(dockCode));
+    ok('★★★ P110b：开屏结束那一刻（`World.gate`）必须补量一次 —— '
+        + '只靠 `World.onLayout`（脚本加载时立刻跑一次）永远量在缩放态里',
+        /World\.gate\(measure\)/.test(dockCode) && /World\.onLayout\(measure\)/.test(dockCode));
+    ok('★★ P110：量距离前先把 `translate` 摘掉（不然量到的是"已经挪过"的位置，'
+        + '每次 resize 越量越偏）',
+        /setProperty\(\s*'translate'\s*,\s*'none'\s*\)/.test(dockCode) &&
+        /getBoundingClientRect/.test(dockCode) &&
+        /removeProperty\(\s*'translate'\s*\)/.test(dockCode));
+    ok('★★ P110：T 用"小字左缘 − `.hero-content` 左缘"的**差值**（两者一起随页面走，'
+        + '所以和当前滚动位置无关）',
+        /\.left - h\.left|r\.left - h\.left|left - heroRect\.left/.test(dockCode));
+    ok('★ P110：侧边栏开合那 450ms 里不量（`main` 的 left 正在变，坐标系不同步），'
+        + '关完再补量一次',
+        /classList\.contains\('sidebar-open'\)/.test(dockCode) &&
+        /transitionend/.test(dockCode));
+    ok('★ P110：手机上（`main` 不横向滚）直接关掉这个效果',
+        /overflowX/.test(dockCode) && /'auto'/.test(dockCode));
+    ok('★ P110：量出来的值写进 `--sub-t`，并导出 measure 供以后手动重算',
+        /setProperty\(\s*'--sub-t'/.test(dockCode) && /SubtitleDock/.test(dockCode));
+})();
+
+/* ============================================================
+   [2am] 进场兜底：观察器没报时，按真实坐标也要放行（P111）
+   ------------------------------------------------------------
+   你报的现象：1920×937 下第 4 块（03 编曲）不进场 —— 它比别人低 24px、
+   底边压出视口、opacity 一直是 0。24px 正好是 `--reveal-y`，
+   说明它**永远停在未放行态**（不是动画没跑完）。
+   IntersectionObserver 只在"阈值跨越"时回调，边界情况会一声不响；
+   所以加一层不依赖事件的兜底：滚动时按缓存的内容坐标做纯算术判定。
+   ============================================================ */
+section('[2am] 进场兜底：观察器没报也要放行（P111）');
+(function revealFallback() {
+    const revJs = read('js/reveal.js');
+    const revCode = codeOnly(revJs);
+    const sweepBody = fnBody(revJs, 'sweep');
+
+    ok('★★★ P111：`start()` 里除了建观察器，还要 `bind()` 兜底判定（少这一条 = 你报的那个 bug）',
+        /scan\(\);\s*\n\s*bind\(\);/.test(revCode), revCode.slice(revCode.indexOf('scan();'), revCode.indexOf('scan();') + 40));
+
+    ok('★★ P111：兜底挂在滚动与布局上（`World.onScroll` / `World.onLayout`），不是自己开 rAF 循环',
+        /World\.onScroll\(queueSweep\)/.test(revCode) &&
+        /World\.onLayout\(/.test(revCode) &&
+        !/setInterval/.test(revCode));
+
+    ok('★★★ P111：判定条件必须和观察器一致（四边各内缩 50px）—— '
+        + '`MARGIN` 和 `rootMargin` 是同一个数',
+        /MARGIN = 50/.test(revCode) && /rootMargin:\s*'-50px'/.test(revCode));
+
+    ok('★★★ P111：只要求"有交集"，**不要求整块都在视口里**'
+        + '（元素比视口高 / 底边压出下沿都是正常的，不能因此不放行）',
+        /b\.top \+ b\.h > MARGIN/.test(sweepBody) &&
+        /b\.top < vh - MARGIN/.test(sweepBody) &&
+        /left \+ b\.cw > MARGIN/.test(sweepBody) &&
+        /left < vw - MARGIN/.test(sweepBody));
+
+    ok('★★ P111：滚动时**不读 rect**（坐标在布局时缓存，每帧只读一次 scrollLeft）',
+        /mainEl\.scrollLeft/.test(sweepBody) &&
+        !/getBoundingClientRect/.test(sweepBody) &&
+        /function boxOf/.test(revCode) && /function cacheBoxes/.test(revCode));
+
+    ok('★★ P111：内容坐标 = `rect.left - mainLeft + scrollLeft`（与当前滚到哪儿无关），'
+        + '判定时再还原成视口坐标',
+        /cx:\s*r\.left - mainLeft \+ s/.test(revCode) &&
+        /const left = mainLeft \+ b\.cx - s/.test(sweepBody));
+
+    ok('★★ P111：放行之后清缓存、全部放行就解绑（不能永远挂着一个滚动回调）',
+        /pending\.delete\(el\)/.test(revCode) && /boxes\.delete\(el\)/.test(revCode) &&
+        /if \(!pending\.size\) unbind\(\)/.test(sweepBody) && /function unbind/.test(revCode));
+
+    ok('★ P111：游乐区开着时不判（整站被推开 100vw，那时的坐标没意义）',
+        /classList\.contains\('sidebar-open'\)/.test(revCode));
+
+    ok('★ P111：兜底救到的会打一行 `[reveal] 兜底放行`（以后同类问题一眼能看出来）',
+        /\[reveal\] 兜底放行/.test(revJs) && /console\.info/.test(revCode));
+
+    ok('★ P111：留了诊断口 `Reveal.pending()`（滚完一整趟之后应该是空的）',
+        /pending:\s*\(\) => Array\.from\(pending\)/.test(revCode));
+})();
+
+/* ============================================================
+   [2an] 滚动与绘制对齐：同帧同步 + 物理像素对齐（P112）
+   ------------------------------------------------------------
+   起因：带鱼屏上滚动时"画面有一点点撕裂"。
+   浏览器窗口里其实没有真正的撕裂（合成器是整帧提交的），能对上的候选是：
+     ① **层级错位**：内容是我们自己写 `main.scrollLeft` 挪的，而
+        `--scroll-x`（视差层 / 贴边小字）平时要等 scroll 事件 → 再等一个
+        rAF 才更新 → 视差层比内容慢一帧；
+     ② **亚像素**：跟随是指数缓动，写进去是 1234.5678 这种小数，
+        站里那些 1px 的线落在半个物理像素上会被拆成两条半透明线 → 滚动时"闪"。
+   两条都在这里钉住；另外留了一个 `?pace` 诊断开关。
+   ============================================================ */
+section('[2an] 同帧同步 + 物理像素对齐（P112）');
+(function scrollPacing() {
+    const mainJs = read('js/main.js');
+    const worldJs = read('js/world.js');
+    const mainCode = codeOnly(mainJs);
+    const stepBody = fnBody(mainJs, 'step');
+    const jumpBody = fnBody(mainJs, 'animateTo');
+
+    /* ---------- ① 同帧同步 ---------- */
+    ok('★★ P112：`World.syncNow()` 存在，并且就是跑一次 `syncScroll()`',
+        /syncNow\(\)\s*\{\s*syncScroll\(\)\s*;?\s*\}/.test(codeOnly(worldJs)) ||
+        /syncNow\(\)\s*\{\s*syncScroll\(\);?\s*\}/.test(codeOnly(worldJs)),
+        (codeOnly(worldJs).match(/syncNow\(\)\s*\{[^}]*\}/) || [''])[0]);
+
+    ok('★★★ P112：**每一处** `main.scrollLeft = …` 后面都紧跟一次同步'
+        + '（惯性 step 两处 + 锚点冲刺两处 = 4 处；少一处那一帧就会错位）',
+        (stepBody.match(/main\.scrollLeft\s*=/g) || []).length === 2 &&
+        (jumpBody.match(/main\.scrollLeft\s*=/g) || []).length === 2 &&
+        (stepBody.match(/syncNow\(\);/g) || []).length === 2 &&
+        (jumpBody.match(/syncNow\(\);/g) || []).length === 2,
+        'step: ' + (stepBody.match(/main\.scrollLeft\s*=/g) || []).length + ' 写 /'
+        + (stepBody.match(/syncNow\(\);/g) || []).length + ' 同步；'
+        + 'jump: ' + (jumpBody.match(/main\.scrollLeft\s*=/g) || []).length + ' 写 /'
+        + (jumpBody.match(/syncNow\(\);/g) || []).length + ' 同步');
+
+    ok('★ P112：同帧同步走的是带守卫的 `syncNow()` 包装（World 没加载时不能炸）',
+        /function syncNow\(\)/.test(mainCode) &&
+        /World\.syncNow === 'function'/.test(mainCode));
+
+    /* ---------- ② 物理像素对齐 ---------- */
+    ok('★★ P112：`main.scrollLeft` 的四个写入点**全部**经过 `snapPx()`',
+        (mainCode.match(/main\.scrollLeft = snapPx\(/g) || []).length === 4 &&
+        !/main\.scrollLeft = (?!snapPx)/.test(mainCode));
+    ok('★★ P112：`snapPx` 对齐到 1/dpr 的整数倍（dpr=2 时 0.5px 一档，'
+        + '不是整 CSS 像素 —— 慢速滚动时 1px 一跳会看得见）',
+        /Math\.round\(v \* d\) \/ d/.test(mainCode) &&
+        /devicePixelRatio \|\| 1/.test(mainCode));
+
+    /* ---------- ③ 帧率无关性没被破坏 ---------- */
+    ok('★ P112：dt 仍然归一化到 60fps 基准并夹在 4 以内（144Hz 屏不会滚太快）',
+        /Math\.min\(\(now - lastStepTime\) \/ \(1000 \/ 60\), 4\)/.test(stepBody));
+
+    /* ---------- ④ ?pace 诊断 ---------- */
+    ok('★ P112：诊断只在 `?pace` 时打开（默认零开销），统计"长帧"并在这一趟滚完时汇总',
+        /\[\?&\]pace/.test(mainCode) && /function pace\(/.test(mainCode) &&
+        /if \(rawMs > 20\)/.test(mainCode) && /paceReport\(\)/.test(stepBody));
+
+    /* ---------- ⑤ 别跟浏览器抢滚动 ---------- */
+    ok('★★ P112：`main` **不许**写 `scroll-behavior: smooth` —— '
+        + '我们会每帧写 scrollLeft，而 smooth 会让每次赋值变成一段动画，两者互相打架 ✗',
+        !/(^|\})[^{}]*\bmain\b[^{}]*\{[^{}]*scroll-behavior/.test(cssNC));
+})();
+
+/* ============================================================
    [2m] 面板文字挂在布局规格上（P56）
    ------------------------------------------------------------
    原来的毛病：`.media-panel-main` 靠 `justify-content: space-between`

@@ -176,6 +176,50 @@ if (REDUCE_MOTION) {
     const FOLLOW = 0.50;
     const MAX_VELOCITY = 60;
 
+    /* ============================================================
+       ★★ P112：两件"对齐到帧/像素"的事
+       ------------------------------------------------------------
+       ① **同帧同步** —— 惯性滚动是在这里写 `main.scrollLeft` 的。这一写，
+          内容已经挪了；而 `--scroll-x`（视差层 / 贴边小字全靠它）平时要等
+          scroll 事件 → 再等一个 rAF 才更新 → **慢一帧**。宽屏上这一帧的
+          错位就是"画面像撕裂"的主要来源。所以每次写完立刻 `World.syncNow()` ✓
+       ② **对齐物理像素** —— 跟随是指数缓动，写进去的是 1234.5678 这种小数。
+          站里到处是 1px 的线（刻线 / 面板边 / 刻度尺），落在半个物理像素上
+          就会被渲染成两条半透明的线 —— 滚动时这些线在"闪"，很像撕裂 ✗
+          对齐到 1/dpr 的整数倍，每个物理像素就一定是整格 ✓
+          （为什么不是对齐到整 CSS 像素：慢速滚动时 1px 一跳会看得出来；
+            dpr=2 时按 0.5px 对齐，dpr=1 时正好就是整像素 ✓）
+       ============================================================ */
+    function snapPx(v) {
+        const d = window.devicePixelRatio || 1;
+        return Math.round(v * d) / d;
+    }
+
+    function syncNow() {
+        if (window.World && typeof window.World.syncNow === 'function') window.World.syncNow();
+    }
+
+    /* ★★ P112 诊断开关：地址栏加 `?pace`。
+       统计"滚动期间的长帧"（一帧 > 20ms 就是掉了至少一帧），停手后打一行。
+       用来区分观感上的"撕裂"到底是 ①掉帧 ②层级错位 ③亚像素抖动 —— 
+       打开后滚几下，看 console 里那行数字就知道。 */
+    const PACE = /[?&]pace\b/.test(window.location.search);
+    let paceFrames = 0, paceLong = 0, paceWorst = 0;
+
+    function pace(rawMs) {
+        if (!PACE) return;
+        paceFrames += 1;
+        if (rawMs > paceWorst) paceWorst = rawMs;
+        if (rawMs > 20) paceLong += 1;
+    }
+
+    function paceReport() {
+        if (!PACE || !paceFrames) return;
+        console.info('[pace] 滚动 ' + paceFrames + ' 帧 / 长帧(>20ms) ' + paceLong
+            + ' / 最慢 ' + paceWorst.toFixed(1) + 'ms');
+        paceFrames = 0; paceLong = 0; paceWorst = 0;
+    }
+
     let targetX = main.scrollLeft;
     let velocity = 0;
     let rafId = null;
@@ -186,8 +230,10 @@ if (REDUCE_MOTION) {
     function step(now) {
         /* ★ 原先是逐帧计算：144Hz 屏幕上惯性衰减速度会是 60Hz 的 2.4 倍，
              滚动距离和手感跟着刷新率变。这里把 dt 归一化到 60fps 基准。 */
+        const raw = lastStepTime ? now - lastStepTime : (1000 / 60);   /* ★ P112：原始帧长，给诊断用 */
         const dt = lastStepTime ? Math.min((now - lastStepTime) / (1000 / 60), 4) : 1;
         lastStepTime = now;
+        pace(raw);
 
         targetX += velocity * dt;
         velocity *= Math.pow(FRICTION, dt);
@@ -204,12 +250,15 @@ if (REDUCE_MOTION) {
 
         const cur = main.scrollLeft;
         const diff = targetX - cur;
-        main.scrollLeft = cur + diff * (1 - Math.pow(1 - FOLLOW, dt));
+        main.scrollLeft = snapPx(cur + diff * (1 - Math.pow(1 - FOLLOW, dt)));   /* ★ P112 */
+        syncNow();                                                             /* ★ P112 */
 
         if (Math.abs(velocity) < 0.2 && Math.abs(diff) < 0.5) {
-            main.scrollLeft = targetX;
+            main.scrollLeft = snapPx(targetX);   /* ★ P112 */
+            syncNow();                           /* ★ P112 */
             velocity = 0;
             rafId = null;
+            paceReport();                        /* ★ P112 诊断：这一趟滚完了，打一行汇总 */
             return;
         }
 
@@ -326,12 +375,14 @@ if (REDUCE_MOTION) {
 
         function frame(now) {
             const t = Math.min((now - startTime) / duration, 1);
-            main.scrollLeft = startX + distance * ease(t);
+            main.scrollLeft = snapPx(startX + distance * ease(t));   /* ★ P112 */
+            syncNow();                                               /* ★ P112 */
 
             if (t < 1) {
                 jumpRafId = requestAnimationFrame(frame);
             } else {
-                main.scrollLeft = target;
+                main.scrollLeft = snapPx(target);                    /* ★ P112 */
+                syncNow();                                           /* ★ P112 */
                 jumpRafId = null;
                 // ★ 只有自己还是最新那次，才把 sprinting 关掉
                 if (myToken === sprintToken) {

@@ -599,8 +599,15 @@
     <!-- ★★ P107：大字的「解码」入场（参考站 openilink.com 首页大标题的真身）。
          数据属性驱动：`data-hyper="1200"` = 开屏拉开后跑；
          `data-hyper-view="1000"` = 进视口才跑 ✓
-         ★ 排在 world.js 之后（它等 World.gate 才启动）✓ -->
+         ★ 排在 world.js 之后（它等 World.gate 才启动）✓
+         ★★ P109：目前**没有任何元素接它**（首页大字恢复静态），机器留着备用 ✓ -->
     <script src="js/hyper-text.js"></script>
+
+    <!-- ★★ P110：标题小字「向左滚到画框左边线就停住」。
+         它只做一件事：把"小字左缘离画框左边线多远"量出来写进 `--sub-t`，
+         位移全部由 style.css 那条 `translate: max(0px, …)` 算 ✓
+         ★ 排在 world.js 之后（等 World.onLayout 量尺寸）✓ -->
+    <script src="js/subtitle-dock.js"></script>
 </body>
 
 </html>

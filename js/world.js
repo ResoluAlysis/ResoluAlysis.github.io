@@ -240,5 +240,15 @@ window.World = (function world() {
         /* 开屏闸门 */
         gate,
         openGate,
-        get introDone() { return gateOpen; },    };
+        get introDone() { return gateOpen; },
+
+        /* ★★ P112：把"滚动位置 → --scroll-x → 订阅者"这套同步**立刻**跑一次。
+           ------------------------------------------------------------
+           平时是 `main` 的 scroll 事件 → queueScroll() → 下一个 rAF 里 syncScroll()。
+           但站里的惯性滚动是 js/main.js 自己写 `main.scrollLeft` 的 —— 那一写
+           等于"这一帧内容已经挪了"，而 --scroll-x 要等 scroll 事件、再等一个
+           rAF 才更新 → **视差层比内容慢一帧**。宽屏上这一帧的错位看起来就是
+           "画面接缝对不上/像撕裂"✗
+           所以写完 scrollLeft 的地方直接调这个，让同一帧里两者一起落位 ✓ */
+        syncNow() { syncScroll(); },    };
 })();

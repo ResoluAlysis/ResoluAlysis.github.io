@@ -11020,6 +11020,421 @@ CSS 写的是外层 —— 于是 `.is-done` 加了一辈子也没有任何规�
    其余情况约 2.6s 打完，光标继续闪。
 
 
+# P110 标题小字：向左滚到画框左边线就停住（往回滚再松开）
+
+## 一、你要的行为，翻成算式就一行
+
+> 页面往左滚 → 小字跟着走；小字**左缘**碰到画框左边那条竖线就停下不动；
+> 页面再往右滚 → 松开，回原位。
+
+设 `s` = 页面横向滚动距离，`T` = 静止时小字左缘离画框左边线多远，那么：
+
+```
+tx = max(0, s - T)
+```
+
+- `s < T`：`tx = 0`，小字就在原位（还没撞线）；
+- `s = T`：刚好撞线；
+- `s > T`：`tx` 把页面走过的距离**补齐** —— 页面往左走 629px，小字就往右挪 629px
+  → 视觉上它就是**钉在那儿不动** ✓
+- `s` 减回来：同一个表达式自动归零 —— 这就是"松开回原位"，不需要第二套逻辑 ✓
+
+## 二、为什么一行 CSS 就够：站里已经有一帧一次的滚动变量
+
+`js/world.js` 每帧只写一次 `.page-zoom` 上的 `--scroll-x`（px 的数值），
+`@property` 还把它注册成了 `<number>`（见 style.css 开头「视差：单一变量驱动」那一节，
+马赛克 / 圆环 / 液滴层全靠它算位移）。所以这条也算在 CSS 里：
+
+```css
+.hero-content .subtitle {
+    translate: max(0px, calc(var(--scroll-x, 0) * 1px - var(--sub-t, 999999px))) 0;
+}
+```
+
+- **JS 一帧都不写 DOM**（这是这个站的核心规矩：一帧只写一次 `--scroll-x`）；
+- `--sub-t` 是唯一需要"测量"的东西（文字宽度 CSS 自己算不出来），
+  由 `js/subtitle-dock.js` 在每次布局里量一次写进去；
+- `translate` 而不是 `transform` —— 和 P106 的进场同一个理由：
+  不跟 `.hero h1` 那套 text-shadow 悬停、以及以后可能挂上的别的位移互相顶掉。
+
+## 三、量 `T` 的三个坑（都处理了）
+
+1. **量之前必须先把自己的 `translate` 摘掉。** 不然量到的是"已经挪过"的位置 ——
+   第一次量对了，之后每次 resize 都会越量越偏（而且看起来像"随机漂移"）。
+   做法：存下内联值 →（如果原本没有内联值就直接）写 `translate: none` →
+   `getBoundingClientRect()` → 还回去。
+2. **用差值，不用绝对坐标。** `T = 小字.left − .hero-content.left`：
+   两者在同一个坐标系里、一起随页面走，所以**差值和你当前滚到哪儿无关** ——
+   滚到第 5 屏去量也是对的 ✓
+3. **侧边栏开合那 450ms 里不量**：那时 `main` 的 left 正在 75px → 0 地变
+   （整站被推开），小字和 `.hero-content` 不是一个坐标系 → 量出来是错的。
+   那段时间直接跳过，等 `.play-sidebar` 的 `transitionend` 到了再补量一次 ✓
+4. （附带）**手机上直接关掉**：`main` 在手机上不横向滚（是纵向长滚），
+   这个效果没意义 —— 把 `--sub-t` 写成 999999px，算式恒为 0，小字老实待着 ✓
+
+## 四、动了哪些文件
+
+| 文件 | 改了什么 |
+|---|---|
+| `js/subtitle-dock.js` | **新增**。`measure()`：摘 `translate` → 量 `小字.left − .hero-content.left` → 写 `--sub-t`；三条例外（侧边栏开合中跳过并等 `transitionend` 补量、手机量成 999999px、元素缺失则整套不启用）；`World.onLayout` 注册（立刻量一次 + resize / 字体就绪后再量）；导出 `window.SubtitleDock` |
+| `css/style.css` | 末尾新增 P110 一段：`.hero-content .subtitle { translate: max(0px, calc(var(--scroll-x, 0) * 1px - var(--sub-t, 999999px))) 0 }` + 那一大段推导注释 |
+| `index.html` | 新挂 `js/subtitle-dock.js`（排在 `world.js` 之后）；`js/hyper-text.js` 的注释补上 P109 的"目前没接线" |
+| `_dev/check.js` | 新增 `[2al]`（9 条，**1023 项**） |
+| `CHANGES.md` | 本节 |
+
+## 五、验证
+
+- `node _dev/check.js`：**1023 项全过**（1013 → 1023）。
+- `node --check js/subtitle-dock.js` 通过；无 BOM、LF。
+- 假 DOM 冒烟测试（跑完删了）：
+
+  ```
+  T = sub.left − hero.left   = 1371px   ← 静止时左缘离画框左边线 1371px
+  translate 用完摘干净?       = true     ← 没留内联 translate 在元素上
+  手机（不横向滚）→ --sub-t   = 999999px ← 效果关掉
+  侧边栏开着 → 跳过测量       = true     ← 值不变（不会量到错坐标）
+  关完补量                    = 870px    ← 用新坐标重算
+  scrollX 0 → tx 0（原位）；1371 → 0（撞线）；2000 → 629（钉住）；回 1371 → 0（松开）
+  ```
+
+- `[2al]` 钉的是：算式在 CSS 里且**用 translate 不用 transform**、`--sub-t` 有兜底
+  大数、JS 里**没有** `onScroll`/`onFrame`（不每帧写 DOM）、量之前先摘 translate、
+  用差值、侧边栏开合跳过 + `transitionend` 补量、手机判断、导出 `measure`。
+- **没验证的**：真实观感 —— 特别是"钉住之后它会一直待在画框左边线上"这一点：
+  后面几个分区滑进来时，小字会**浮在它们的左缘上方**（`.hero` 是 z-index 11，
+  比分区高）。这是这个效果的必然结果，你看到觉得碍眼再说。
+
+## 六、你检查时要知道的三件事
+
+1. **撞线就是撞 `.df-tl` / `.df-bl` 那条竖线**（`--content-x`），
+   不是屏幕左边缘 —— 因为基准取的是 `.hero-content` 的左缘，而它 `inset: 0`
+   铺在 `.hero` 的 padding box 上（P105 那条等式）✓
+2. **`T` 是"文字宽度 + 右边距"算出来的**，所以小字那行文案变长/变短后，
+   撞线时机跟着变 —— 但**不用改任何数字**：`resize` 与 `document.fonts.ready`
+   都会触发重量（走 `World.onLayout`）✓
+3. **不喜欢"钉住后浮在别的分区上"**，有两个现成的做法：给 `.subtitle` 在
+   `--scroll-x` 超过某个值时加一层 `opacity` 淡出（同样是 CSS 一行算式）；
+   或者让它钉住后**贴着画框左边线竖排**（那要加 `writing-mode`）。说一声我改。
+
+
+# P110b 首次进来不固定、开一次游戏才正常：量到的是**缩放过**的坐标
+
+## 一、根因
+
+P110 只把测量挂在了 `World.onLayout` 上 —— 而它的语义是"**注册时立刻调用一次**"。
+脚本在文档末尾加载，那一刻页面正处在开屏动画里：
+
+```css
+.page-zoom { animation: body缩放 4.5s linear 0s both; }   /* scale 2 → 1.1 → 1 */
+```
+
+而 `getBoundingClientRect()` 返回的是**经过 transform 之后**的盒子。设缩放系数 `s`、
+变换原点 `O`，则
+
+```
+r.left = O.left + s · (r0.left − O.left)      h.left = O.left + s · (h0.left − O.left)
+T量到 = r.left − h.left = s · (r0.left − h0.left) = s · T真
+```
+
+所以开屏期间量出来的 `T` 是 `1.1 ~ 2 倍`的真值 —— 也就是说小字要多滚一段
+（在 1920 宽的屏上多滚半屏到一屏）才开始被补位。表现就是你看到的：
+**它一路跟着页面滑过去，不在画框左边线停下**。
+
+`document.fonts.ready` 之后 `World.onLayout` 会再跑一次（字体尺寸变了必须重量），
+但那次**还是在开屏里**，量出来的依旧偏大 ✓
+
+**为什么"开一次游乐区就好了"**：P110 还挂了 `.play-sidebar` 的 `transitionend`
+补量 —— 那次发生在开屏**结束之后**，`.page-zoom` 的 `transform` 已经清成 `none`，
+所以那一次量的是真值 ✓。这也正好把根因指了出来。
+
+## 二、改法：加上"开屏结束"这个时间窗
+
+```js
+function stable() {
+    return document.body.classList.contains('intro-done');   /* 同一个类，transform 同时被清掉 */
+}
+
+function measure() {
+    if (!stable()) return;        /* ★ 开屏期间不量，也不写值 —— 让 CSS 的兜底大数继续生效 */
+    ...
+}
+
+window.World.gate(measure);       /* ★ 开屏结束那一刻补一次（新增） */
+window.World.onLayout(measure);   /* resize / 横竖屏 / 字体就绪后重量（保留） */
+```
+
+- `World.gate` 的时机是准的：`js/main.js` 的四条路径（正常结束 / 跳过 /
+  降低动效 / 兜底）都是**先加 `intro-done`、再 `World.openGate()`**，
+  而 `body.intro-done .page-zoom { transform: none }` 用的就是同一个类 ✓
+- `if (!stable()) return` 里**故意不写任何值**：让 CSS 那条
+  `var(--sub-t, 999999px)` 兜底继续生效（= 算式恒为 0 = 小字在原位），
+  而不是先写一个偏大的错值进去 —— 那种错值在观感上比"没效果"更糟
+  （小字会在错的地方停住，看起来像卡了个 bug）✓
+
+## 三、动了哪些文件
+
+| 文件 | 改了什么 |
+|---|---|
+| `js/subtitle-dock.js` | 新增 `stable()`（`body.intro-done` 才能量）；`measure()` 开头加 `if (!stable()) return`；挂上 `World.gate(measure)`；文件头补第 4 条坑（缩放坐标）；导出 `{ measure, stable }` |
+| `_dev/check.js` | `[2al]` 新增 2 条（`intro-done` 才量 / `World.gate` 必须挂）→ **1023 → 1025 项** |
+| `CHANGES.md` | 本节 |
+
+## 四、验证
+
+- `node _dev/check.js`：**1025 项全过**（1023 → 1025）。
+- `node --check js/subtitle-dock.js` 通过；无 BOM、LF。
+- 假 DOM 冒烟测试（跑完删了）：
+
+  ```
+  开屏中 onLayout 立刻量过一次   = true
+  开屏中 --sub-t **没被写**      = true    ← 兜底 999999px 继续生效（不固定，也不写错值）
+  gate 之后量出来了              = 1371px  ← 正确值
+  再量一次仍然 1371px            = true    ← 差值稳定，不漂
+  侧边栏开着 → 跳过              = true
+  ```
+
+- `[2al]` 现在钉着：`stable()` 读的是 `intro-done`、`measure()` 在它之前直接返回、
+  `World.gate(measure)` 与 `World.onLayout(measure)` **两个都要在**
+  （少前者 = 这次这个 bug，少后者 = resize 后撞线时机错）。
+- **没验证的**：你那边的实际观感 —— 现在应该是首次进来就正常：滚到小字左缘
+  碰到画框左边线即停，往回滚松开。
+
+## 五、你检查时要知道的两件事
+
+1. **想确认修好了**：刷新页面（别先做任何操作）→ 一路往右滚。
+   小字应该在它左缘正好压到画框左边那条竖线时停住。
+   如果还是"滑过去才停"，那就是 `T` 偏小（停在线的左边），
+   说一声 —— 那说明还有一个缩放来源没找干净。
+2. **这条经验值得记住**：`.page-zoom` 在开屏期间的 `transform` 会让**所有**
+   `getBoundingClientRect()` 读数失真（P74 那个"层叠上下文"是它的另一个副作用）。
+   以后任何"量尺寸"的代码，都要么等 `intro-done`，要么挂 `World.gate` ✓
+
+
+# P111 1920×937 下「03 编曲」那块不进场：观察器漏报，补一层兜底判定
+
+## 一、你报的三个数字，已经把结论写在那儿了
+
+> 它比前三块**低 24px**、底边到 **961**（视口 937，正好 +24）、`opacity` 一直是 0
+
+`24px` 就是 CSS 里 `--reveal-y` 的值 —— 也就是说它**永远停在"未放行"那一态**：
+`opacity: 0` + `translate: 0 24px`。不是动画没跑完，是 `.is-in` 从来没被加上 ✗
+（三块面板的**盒子**是一样高的，它们是一行 flex 项；看起来"低 24px"就是那 24px 的位移。）
+
+放行的路只有一条：`IntersectionObserver` 回调里 `if (e.isIntersecting) show(...)`。
+所以问题在**观察器没报**这一侧。
+
+## 二、为什么观察器会漏（以及为什么不硬猜它）
+
+IntersectionObserver 只在**阈值跨越**时回调，而且它算的是"目标盒子 ∩ 根（减去
+rootMargin）∩ 祖先裁剪"之后还有没有交集。这类边界情况（盒子跟根一样高、
+底边压出视口、被 `-50px` 裁掉一截）是它最容易一声不响的地方 —— 而且**漏了就是
+永久漏**，没有任何兜底。
+
+这台机器上没有浏览器，我没法在 1920×937 下把它的内部状态打出来验证到底是哪一条。
+所以这轮的做法不是"猜一个参数改掉"，而是**再加一条不依赖事件的路**：
+只要它真的在屏幕上，就一定会被放行。
+
+## 三、兜底怎么做的：缓存坐标 + 纯算术，条件和观察器一模一样
+
+```js
+/* 布局时缓存"内容坐标"（与滚到哪儿无关）*/
+cx = rect.left - mainLeft + main.scrollLeft
+/* 滚动时只做算术 */
+left = mainLeft + (cx - scrollLeft)
+hit  = left + cw > 50 && left < vw - 50           /* 横向：和根有交集 */
+    && top + h  > 50 && top < vh - 50             /* 纵向：同上 */
+```
+
+四个要点：
+
+1. **条件必须和观察器一致**（四边各内缩 50px）：`MARGIN = 50` 和
+   `rootMargin: '-50px'` 是同一个数，两条路放行的时机才会一样，不会一个早一个晚。
+2. **只要"有交集"，不要求整块都在视口里。** 元素比视口还高、底边压出下沿，
+   都是正常情况 —— 这正是你报的那块所在的处境，绝不能因此不放行 ✗
+3. **滚动时一个 rect 都不读**：位置在布局时缓存好，每帧只读一次
+   `main.scrollLeft`（站里的规矩一直是"一帧只写一次 `--scroll-x`，其余交给算术"）。
+4. **全部放行后自动解绑**：`pending` 空了就撤掉滚动/布局回调 —— 之后这个功能
+   对运行时零开销 ✓
+
+顺手加了两样诊断（这次要是还漏，能直接看出来漏在哪）：
+
+- 兜底救到东西时打一行 `console.info('[reveal] 兜底放行 N 个（观察器没报）：<类名>')`；
+- `window.Reveal.pending()` 返回还没放行的元素 —— 滚完一整趟应该是空数组。
+
+## 四、动了哪些文件
+
+| 文件 | 改了什么 |
+|---|---|
+| `js/reveal.js` | 新增 `pending` 集合 + `boxes` 缓存 + `cacheBoxes()` / `boxOf()` / `sweep()` / `queueSweep()` / `bind()` / `unbind()`；`show()` 里顺手清 `pending`/`boxes`；`start()` 在 `scan()` 之后 `bind()`；导出 `pending()` |
+| `assets/fonts/HuXiaoBo-subset.woff2` + `_dev/glyph-manifest.json` | 重裁：453 个码位 / 41.3 KB（新文案「兜底放行」等） |
+| `_dev/check.js` | 新增 `[2am]`（10 条）→ **1025 → 1035 项** |
+| `CHANGES.md` | 本节 |
+
+## 五、验证
+
+- `node _dev/check.js`：**1035 项全过**（1025 → 1035）。
+- `node --check js/reveal.js` 通过；无 BOM、LF。
+- 假 DOM 冒烟测试（**故意让观察器一次都不回调**，跑完删了）：
+
+  ```
+  观察器建了几个回调         = 1 (IO 一次都没报)
+  panel-a（正常在视口里）     = true
+  panel-b（底边压出视口 988） = true  ← 复刻你报的那块
+  panel-c（还在右边 5000）    = false (该不放行)
+  打了兜底日志?               = true  "[reveal] 兜底放行 2 个（观察器没报）"
+  滚到 4000 后 panel-c        = true
+  还没放行的个数              = 0     Reveal.pending() = 0
+  ```
+
+- `[2am]` 钉的是：`start()` 里 `scan()` 之后必须 `bind()`、兜底挂在
+  `World.onScroll`/`World.onLayout`（不自己开 rAF 循环）、`MARGIN` 与
+  `rootMargin` 同值、**只判交集不判包含**（四条不等式逐条点出来）、
+  滚动时不读 rect、坐标是"内容坐标"再还原、放行后清缓存并解绑、
+  游乐区开着不判、诊断日志、`Reveal.pending()` 存在。
+- **没验证的**：真机上它到底还漏不漏 —— 这个只能你刷新看一眼。
+
+## 六、你检查时要知道的两件事
+
+1. **怎么确认**：刷新 → 一路滚到「03 编曲」。它现在应该正常淡入上抬。
+   顺手看一眼 DevTools 的 console：
+   - 有 `[reveal] 兜底放行 …` → 说明观察器确实漏了，兜底救了它（这就是这次的修法）；
+   - 什么都没有、但它出来了 → 观察器这次报了（说明原来那次是偶发，兜底仍然在守）；
+   - 还是不出来 → 在 console 里敲 `Reveal.pending()`，把返回的元素贴给我。
+2. **一个工具坑**（这次踩了一次）：`node _dev/subset-font.js | Select-Object -First 2`
+   会让 PowerShell 提前关掉管道，**node 被杀在半路**，清单没写成 ——
+   于是 `[2b]` 一直在报"缺字"。以后跑这个脚本别接 `Select-Object -First`。
+
+
+# P112 带鱼屏上"滚动有一点点撕裂"：先把"同一帧"和"同一像素"对齐
+
+## 一、先把"垂直同步"这件事说清楚
+
+浏览器里**没有可以打开的"垂直同步"开关**：
+
+- `requestAnimationFrame` 本来就是跟着刷新率的垂直回扫走的（144Hz 屏就是 144 帧上限）；
+- 页面合成是**整帧提交**的，正常情况下窗口内**不会出现真正的撕裂**
+  （撕裂是没开 vsync 的 3D 程序才会有的现象；浏览器只在"多缓冲/独占全屏/driver 覆盖层"
+  这类特殊情况下才可能有）；
+- 所以宽屏上那种"一点点撕裂"，能对上的只有三种，而**有两种我能修**：
+
+| 候选 | 现象 | 这轮怎么处理 |
+|---|---|---|
+| ① **层级错位**（最可能） | 内容挪了，但视差/贴边层慢一帧 → 缝对不上 | 改成**同帧同步**，见第二节 |
+| ② **亚像素抖动** | 1px 的线落在半个物理像素上，滚动时"闪" | 滚动位置**对齐物理像素**，见第三节 |
+| ③ 掉帧 | 一帧超过 16.6ms，看着像"卡+撕" | 只加诊断（`?pace`），见第四节 |
+
+①为什么最可能：站里的横向滚动**是我们自己写 `main.scrollLeft` 挪的**（`js/main.js`
+的惯性循环和锚点冲刺），而所有视差层（马赛克 / 圆环 / 液滴 / 贴边小字）读的是
+`--scroll-x` —— 那个变量平时是这样更新的：
+
+```
+main.scrollLeft = …        ← 这一帧内容已经挪了
+      ↓（scroll 事件）
+   queueScroll()  →  requestAnimationFrame  →  syncScroll()  →  写 --scroll-x
+      ↑ 已经晚了一步                                        ← 视差层晚一帧才跟着挪
+```
+
+宽屏上位移大，这一帧的错位会被放大成"画面像被撕成两半"的观感。
+
+## 二、改法一：写完 `scrollLeft` 立刻同步（同一帧）
+
+`js/world.js` 新增一个入口：
+
+```js
+syncNow() { syncScroll(); }
+```
+
+`js/main.js` 里**四处**写 `main.scrollLeft` 的地方（惯性两处 + 锚点冲刺两处）
+写完立刻调一次：
+
+```js
+main.scrollLeft = snapPx(…);
+syncNow();           // ★ 同一帧里把 --scroll-x 和所有订阅者一起更新
+```
+
+于是这一帧里"内容挪到哪、视差层就算到哪"，中间不再隔着一次事件派发和一个 rAF。
+（顺带一个好处：`body` 上的 `--scroll-x` 也成了真正的"这一帧的滚动位置"，
+以后任何 CSS 视差都自动对齐。）
+
+## 三、改法二：滚动位置对齐物理像素
+
+惯性跟随是指数缓动，算出来是 `1234.5678` 这种小数。站里到处是 **1px 的线**
+（画框刻线、面板边、刻度尺），落在半个物理像素上会被渲染成两条半透明的线 ——
+滚动时这些线就在"闪"，观感上非常像撕裂。
+
+```js
+function snapPx(v) {
+    const d = window.devicePixelRatio || 1;
+    return Math.round(v * d) / d;      /* 对齐到 1/dpr 的整数倍 */
+}
+```
+
+- **为什么不直接对齐到整 CSS 像素**：慢速滚动时 1px 一跳会看得出来。
+  按 `1/dpr` 对齐，dpr = 2 的屏上是 0.5px 一档、dpr = 1 时正好就是整像素 ✓
+- 四个写入点全部走 `snapPx()`（自检 `[2an]` 会数）。
+
+## 四、加了个诊断开关：`?pace`
+
+我没有你的屏幕，所以留了个能自己量的东西：地址栏加上 `?pace` 再刷新 ——
+
+```
+http://127.0.0.1:xxxx/index.html?pace
+```
+
+滚几下，松手之后 console 会打一行：
+
+```
+[pace] 滚动 214 帧 / 长帧(>20ms) 3 / 最慢 34.2ms
+```
+
+- **长帧 0、最慢 < 20ms** → 没掉帧，你看到的"撕"就是①/②，这轮应该已经消掉了；
+- **长帧一堆** → 是掉帧（宽屏每帧要合成的全屏层太多）。
+  下一步可以做：把大 canvas 的 `devicePixelRatio` 上限压到 1.5、
+  或在超宽屏（>2560px）下关掉前景粒子层 —— 但那两条都会改观感，等你确认再动。
+
+不加 `?pace` 时这个诊断**零开销**（`PACE` 为 false 时 `pace()` 第一行就返回）。
+
+## 五、动了哪些文件
+
+| 文件 | 改了什么 |
+|---|---|
+| `js/world.js` | 导出 `syncNow() { syncScroll(); }`（末尾，带一段说明） |
+| `js/main.js` | 新增 `snapPx()` / `syncNow()` 包装 / `?pace` 诊断（`pace()` / `paceReport()`）；`step()` 两处、`animateTo()` 两处写入改为 `snapPx(...)` 并紧跟 `syncNow()`；滚停时打一行 pace 汇总 |
+| `assets/fonts/HuXiaoBo-subset.woff2` + `_dev/glyph-manifest.json` | 重裁：455 个码位 / 41.5 KB |
+| `_dev/check.js` | 新增 `[2an]`（8 条）→ **1035 → 1043 项** |
+| `CHANGES.md` | 本节 |
+
+## 六、验证
+
+- `node _dev/check.js`：**1043 项全过**（1035 → 1043）。
+- `node --check js/main.js` / `js/world.js` 通过；无 BOM、LF。
+- 假 DOM 冒烟测试（跑完删了）：
+
+  ```
+  写完之后 --scroll-x 立刻更新 = true  ("1234.5")   ← syncNow 是同步的，不经过 rAF
+  订阅者也立刻收到           = true  [0, 1234.5]
+  位置没变 → 不重复写        = true
+  ```
+
+- `[2an]` 钉的是：`syncNow()` 就是 `syncScroll()`、**四处写入后面都紧跟同步**
+  （数出来的：step 2 写 / 2 同步，jump 2 写 / 2 同步）、四个写入点全过 `snapPx`、
+  `snapPx` 用的是 `1/dpr` 而不是整像素、dt 仍然归一化到 60fps、
+  诊断只在 `?pace` 时生效、**`main` 上不许出现 `scroll-behavior: smooth`**
+  （会和我们每帧写 `scrollLeft` 打架）。
+- **没验证的**：你的带鱼屏上还撕不撕 —— 这个只有你能看。
+
+## 七、你检查时要知道的三件事
+
+1. **先看有没有改善**：直接滚几下。如果"撕裂感"没了 → 就是①（层级错位）为主。
+   如果还剩一点"线条在抖" → 那部分是②，我可以把 `snapPx` 从 `1/dpr` 改成整 CSS 像素
+   （换法：`Math.round(v)`），代价是慢速滚动时 1px 一跳。
+2. **还有"卡"的感觉**，就加 `?pace` 量一下，把那一行数字告诉我。
+   长帧多的话，下一步是"减少每帧的全屏合成"（压 DPR / 超宽屏关前景粒子），
+   那会改观感，所以我等你确认再动。
+3. **别用 `scroll-behavior: smooth` 去"让滚动更顺"**：我们每帧都在写 `scrollLeft`，
+   smooth 会把每次赋值变成一段动画，两者互相打架（自检 `[2an]` 已经钉住了这一条）。
+
+
 
 
 
