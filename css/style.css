@@ -1634,15 +1634,15 @@ background            底色（方块之间露出来的那层）
     display: flex;
     align-items: center;
     justify-content: center;
-    text-align: center;
+    text-align: right;
     overflow: visible;
+    position: relative;      /* ★ P105：给 .hero-content 当定位祖先 ✓ */
 
     z-index: 11;
 }
 
-.hero .container {
-    transform: translateX(calc(var(--nav-width) / -2));
-}
+/* ★ P105：原来那条 `translateX(-nav/2)` 是为了把"居中"的内容在视觉上补偿导航栏 ——
+   现在内容改成按**右边缘**对齐了，这条补偿会把右边缘推开 37.5px ✗，所以删掉 ✓ */
 
 /* ----- 区块内部居中容器 ----- */
 .container {
@@ -1807,7 +1807,7 @@ background            底色（方块之间露出来的那层）
 
 .hero h1 {
     font-size: clamp(1.2rem, 5vw, 6rem);
-    margin-bottom: 12px;
+    /* ★ P105：位置/行高由下面那段 P105 接管（右下角钉在画框刻线上）✓ */
     text-shadow:
         0 2px 0 var(--black);
     transition: text-shadow 0.4s;
@@ -1830,15 +1830,11 @@ background            底色（方块之间露出来的那层）
 
 .subtitle {
     color: var(--text-muted);
-    margin-bottom: 28px;
+    /* ★ P105：位置由下面那段 P105 接管（右上角钉在画框刻线上）✓ */
 }
 
-.hero-buttons {
-    display: flex;
-    gap: 14px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
+/* ★ P105：首页原来那个 `.hero-buttons` 容器（玩游戏 / 作品集 / 联系我）连样式一起删了 ——
+   入口都搬到导航栏了 ✓。`.btn` 那一套**留着**：站里别处还用得上 ✓ */
 
 .btn {
     padding: 10px 22px;
@@ -3478,6 +3474,17 @@ body.sidebar-open .cursor-toast {
     align-items: center;
     justify-content: center;
     overflow: visible;
+    /* ★★ P105：铺满整个首页那一屏 —— 这样里面那条 `.hero-content`（绝对定位）
+       的 inset: 0 就等于 `.hero` 的 padding box，也就是**画框**那一圈
+       （`.hero` 的 padding 和 `.draft-frame` 用的是同一套令牌 ✓） */
+    width: 100%;
+    height: 100%;
+    /* ★★★ P105b（你报的"右侧还差 450px"就是这个）：这个盒子同时带着 `.container`，
+       而 `.container` 写着 `max-width: 960px` ✗ —— 4K 下它被卡在 960px、还 `margin: 0 auto`
+       居中，于是内容的右边缘跑到屏幕中间去了，离右边的刻线差了小半屏 ✗。
+       首页这一块要的是"贴住画框"，不是"960px 的阅读栏"，所以把上限解开 ✓
+       （左右那 20px padding 不受影响：绝对定位的 inset 基准是 padding box ✓） */
+    max-width: none;
 }
 
 .liquid-bg {
@@ -3547,10 +3554,47 @@ body.sidebar-open .cursor-toast {
     }
 }
 
+/* ============================================================================
+   ★★ P105：首页 = "两个角"
+   ----------------------------------------------------------------------------
+   要的：
+     · 标题大字（.hero h1）的**右下角**钉在画框右下角那个刻线（.df-br）上；
+     · 小字（.subtitle）的**右上角**钉在右上角那个刻线（.df-tr）上。
+   怎么对上的（关键）：`.section, .hero` 的 padding 是
+     `var(--v-inset) var(--gutter) var(--safe-b)`，
+   而 `.draft-frame`（刻线框）是
+     `top: var(--v-inset); right: var(--gutter); bottom: var(--safe-b); left: var(--content-x)` ——
+   **同一套令牌** ✓。所以只要让这两块内容的定位基准 = `.hero` 的 padding box，
+   它们的右/上/下边就和刻线框那三条边严丝合缝 ✓（左边用不到，不管 ✓）。
+   实现：`.hero-box` 铺满 → `.hero-content` 绝对定位 inset: 0（= padding box），
+   再把 h1 / .subtitle 分别钉到它的右下 / 右上角 ✓。
+   ★ 字号与行高：h1 用 `line-height: 1`（显示字体的常规做法）——
+     这样它的盒底几乎就是字形的底；要"字形光学对齐"，再给 h1 一点负 margin 即可 ✓。
+   ============================================================================ */
 .hero-content {
-    position: relative;
-    z-index: 1;
-    text-align: center;
+    position: absolute;
+    inset: 0;
+    text-align: right;
+    /* ★★ 这里**不能**写 pointer-events: none —— js/crosshair.js 是用
+       `document.elementFromPoint` 找"光标底下是谁"的，那一写 h1 就永远命中不到，
+       标题的 `.is-hot`（text-shadow 收一下）就悄悄失效了 ✗。
+       这块盒子是透明的、也没有点击处理器，让它继续吃指针没有副作用 ✓ */
+}
+
+.hero h1 {
+    position: absolute;
+    right: 0;
+    bottom: 0;                   /* ★ 右下角 = 画框右下角那个刻线 ✓ */
+    margin: 0;
+    line-height: 1;
+}
+
+/* 小字：右上角 = 画框右上角那个刻线 ✓ */
+.hero-content .subtitle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    margin: 0;
 }
 
 /* ----- 十字准星 ----- */
@@ -3927,6 +3971,18 @@ body.intro-done .cursor-dot {
 
     .hero {
         min-height: 70vh;
+    }
+
+    /* ★★ P105：上面那条把首页也改成了 `height: auto` / `padding: … 0` ——
+       而首页的内容现在是**绝对定位**的（贴着画框的两个角），父级高度一塌就没地方贴了
+       （会变成 0 高、两行字叠在顶上 ✗）。
+       所以手机上给首页把"一屏"和左右留白补回来 —— 它本来就该是一屏 ✓ */
+    .hero {
+        height: 100vh;
+        height: 100dvh;
+        min-height: 100dvh;
+        max-height: 100dvh;
+        padding: var(--v-inset) var(--gutter) var(--safe-b);
     }
 
     .hero .container {
@@ -6258,4 +6314,198 @@ body.is-resizing .df-corner,
 body.is-resizing #ruler-left,
 body.is-resizing #ruler-bottom {
     transition: none !important;
+}
+
+/* ============================================================================
+   ★★ P106：滚动进场（reveal）+ 首页那两个角（终端 / 数据）
+   ----------------------------------------------------------------------------
+   参考站 openilink.com 上有三样东西想搬过来：
+     ① 滚动进场：进视口时淡入 + 从下往上抬一点，同一组依次错开；
+     ② 终端块：一行行打出来 + 末尾一个方块光标在闪；
+     ③ 大号等宽数字 + 小号标签的「数据感」排版。
+   三样都只用了这个站已有的东西（ui-monospace、--text-muted、--accent），
+   没有引入任何新的字体文件 / 依赖 ✓
+
+   ① 的三条要点（都是踩坑换来的，改之前先读）：
+     · 隐藏态必须挂在 `html.reveal-on` 之下 —— 这个类由 js/reveal.js
+       在**真正开始观察时**才加。脚本没跑起来时页面是正常可见的，
+       不会出现"藏起来又没人放行"的白屏 ✓；
+     · 位移用 `translate`，**不用** `transform`。面板身上已经有 transform 的
+       悬停与换图动画，写 transform 会把它们顶掉；`translate` 是独立属性 ✓；
+     · `prefers-reduced-motion` 下直接可见、连错开延迟都不要 ✓。
+   ============================================================================ */
+html.reveal-on [data-reveal] {
+    /* ★★ P107：这四个值全部照参考站的 `FadeIn` 抄 —— 源码是从你存的网页里
+       挖出来的（`0gs6v0~voz1o1.js`）：initial 是 `{opacity: 0, y: 24}`、
+       `duration: .5`、`ease: [.21,.47,.32,.98]`、`viewport: {once, margin: '-50px'}`。
+       它那边的错开是手写的 `delay: .1`，所以这里取 100ms 一档 ✓ */
+    --reveal-dur: 500ms;
+    --reveal-ease: cubic-bezier(0.21, 0.47, 0.32, 0.98);
+    /* 错开延迟 = 同组序号 × 100ms，序号由 JS 写进 --reveal-i（见 js/reveal.js） */
+    --reveal-delay: calc(var(--reveal-i, 0) * 100ms);
+
+    opacity: 0;
+    translate: 0 var(--reveal-y, 24px);
+    transition:
+        opacity var(--reveal-dur) var(--reveal-ease) var(--reveal-delay),
+        translate var(--reveal-dur) var(--reveal-ease) var(--reveal-delay);
+}
+
+html.reveal-on [data-reveal].is-in {
+    opacity: 1;
+    translate: none;
+}
+
+/* ----- ② 终端块：钉在画框左下角，裸文字，打完渐隐 -----
+   ★★ P107 曾经给它套了一层"命令条外壳"（圆角 + 1px 描边 + 半透明底 + 模糊），
+      那是参考站那条 `$ curl … | sh` 的壳。**P108 你要求去掉** —— 它现在是裸文字 ✓
+   ★★ P108 三件事：
+      1. 位置从"跟着首页滚"改成 **fixed**：它钉在画框左下角那个刻线上，
+         不随页面滚动（和 `.draft-frame` 的四只刻线同一种脾气）；
+         定位用的正是 `.df-bl` 那两个令牌（left: --content-x / bottom: --safe-b），
+         所以它和左下角那条刻线严丝合缝 ✓
+      2. 打完（js/hero-console.js 挂 `.is-done`）→ 渐隐，隐完不再回来；
+      3. 游乐区展开时也跟着刻线一起退场（那时候它盖在游戏区上面会碍事）✓ */
+.hero-term {
+    position: fixed;
+    left: var(--content-x);     /* = `.df-bl` 的竖线 */
+    bottom: var(--safe-b);      /* = `.df-bl` 的横线 */
+    margin: 0;
+    max-width: calc(100vw - var(--content-x) - var(--gutter));
+    text-align: left;
+    white-space: pre;           /* 终端不折行：折了就不像终端了 ✓ */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    /* ★★ P109：**渐隐那条撤掉了**（P108 加过、但一直没生效）。
+       没生效的原因不在 CSS：js/hero-console.js 把 `.is-done` 挂在了
+       `[data-hero="term-body"]` 那个 `<pre>` 上，而规则写的是
+       `.hero-term.is-done`（外层 div）—— 类挂错了一层，两条规则都没命中 ✗
+       （要接回来：JS 那边用 `el.closest('.hero-term')`，这里把
+        `transition: opacity …` 和下面的 `.is-done` 一起加回来 ✓） */
+    /* ★ 和 `.hero-content` 同一条规定：这里**不能**写 pointer-events: none ——
+       js/crosshair.js 用 document.elementFromPoint 找"光标底下是谁"，
+       写了这块就永远不参与命中测试 ✗。它没有点击处理器，吃指针无害 ✓ */
+}
+
+/* ★ P108 的 `.hero-term.is-done`（打完渐隐）在这里 —— P109 已删除 ✓ */
+
+/* 游乐区展开：游戏区在 0 层、它挂在 `.hero` 那个第 11 层的上下文里，
+   不藏起来就会浮在游戏画面上 ✗（刻线是飞出去的，它跟着淡掉就行）✓ */
+body.sidebar-open .hero-term {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--sidebar-dur) var(--panel-ease),
+        visibility 0s linear var(--sidebar-dur);
+}
+
+.hero-term-body {
+    margin: 0;
+    font: inherit;
+    white-space: pre;
+    color: inherit;
+}
+
+/* 方块光标：挂在正文的**行内末尾**（::after 跟着最后一个字走，不用 JS 定位） */
+.hero-term-body::after {
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 1em;
+    margin-left: 0.12em;
+    vertical-align: -0.16em;
+    background: var(--accent);
+    animation: termBlink 1.06s step-end infinite;
+}
+
+/* 硬闪，不渐变（和 .df-name::before 那颗点同一种脾气） */
+@keyframes termBlink {
+
+    0%,
+    50% {
+        opacity: 1;
+    }
+
+    50.01%,
+    100% {
+        opacity: 0;
+    }
+}
+
+/* ----- ③ 数据角：首页左上角 —— 大号等宽数字 -----
+   排版照参考站那一行数据（`7 / SDK 语言`、`3 / 消息通道`、`MIT / 开源协议`）：
+   数字 `text-2xl font-black md:text-3xl`（24px / 30px，字重 900），
+   标签 `font-mono text-xs uppercase tracking-wider`（12px，字距 .05em），
+   两个之间没有间距，组与组之间 `gap-12`（48px）✓ */
+.hero-stats {
+    position: absolute;
+    left: 0;
+    top: 0;                     /* ★ 左上角 = 画框左上角那个刻线 ✓ */
+    display: flex;
+    gap: 48px;                  /* 参考站：gap-12 */
+    margin: 0;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+}
+
+.hs-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+}
+
+.hs-num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 900;                      /* 参考站：font-black */
+    font-variant-numeric: tabular-nums;    /* 等宽数字：位数变了不会左右抖 ✓ */
+    font-size: 1.5rem;                     /* 参考站：text-2xl */
+    line-height: 1;
+    letter-spacing: 0.02em;
+    color: var(--text);
+}
+
+/* 参考站是 `md:text-3xl`（断点 768px）；站里的分界是 768/769，对齐它 ✓ */
+@media (min-width: 769px) {
+
+    .hs-num {
+        font-size: 1.875rem;
+    }
+}
+
+.hs-label {
+    font-size: 0.75rem;                    /* 参考站：text-xs */
+    letter-spacing: 0.05em;                /* 参考站：tracking-wider */
+    text-transform: uppercase;             /* 中文没影响，以后换英文标签自动大写 ✓ */
+    color: var(--text-muted);
+}
+
+/* ★ 手机上首页只有 70~100vh 那么宽的一条，四个角会互相压 ——
+   这两个角是"宽屏上的装饰"，小屏直接不显示，版式回到 P105 的
+   "标题右下 / 小字右上" ✓（新加的块不该让窄屏变差） */
+@media (max-width: 768px) {
+
+    .hero-stats,
+    .hero-term {
+        display: none;
+    }
+}
+
+/* ----- 降低动效 -----
+   进场直接可见（连错开都不留）；光标停止闪烁、就那么亮着 ✓
+   ★ 两条选择器必须写**同名**：自检 [2c] 是按选择器名配对的，
+     写成更具体的祖先选择器不算覆盖 ✓ */
+@media (prefers-reduced-motion: reduce) {
+
+    html.reveal-on [data-reveal] {
+        opacity: 1;
+        translate: none;
+        transition: none;
+    }
+
+    .hero-term-body::after {
+        animation: none;
+    }
 }

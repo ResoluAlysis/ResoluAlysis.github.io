@@ -426,8 +426,7 @@ section('[2a] style.css 的结构自洽（P59）');
        没有 `.section` 这个类，所以那条 `:not(#home)` 本来就够不着它；
        这里连"它到底带不带 .section"一起钉住，免得以后有人加类时把它算进去。 */
     ok('★★ 首页是 #home.hero（不带 .section），那条最小宽度够不着它',
-        /id="home"[^>]*class="[^"]*hero/.test(html) &&
-        !/id="home"[^>]*class="[^"]*\bsection\b/.test(html));
+        /id="home"[^>]*class="[^"]*hero/.test(html) &&        !/id="home"[^>]*class="[^"]*\bsection\b/.test(html));
     /* ★★ 手机端必须把这条 1000px 复位 —— 而且**要带上同一个选择器**：
        `.section:not(#home)` (0,2,0) 比 `.section` (0,1,0) 更特异，
        只写 `.section { min-width: 0 }` 是压不过它的（P60 刚学的教训）。 */
@@ -443,6 +442,373 @@ section('[2a] style.css 的结构自洽（P59）');
     const mobBlock = _mob.map(m => cssNC.slice(m.index, m.index + 2000)).find(s => /\.section,/.test(s)) || '';
     ok('移动端把「一屏一格」复位（否则内容被裁且滚不到）',
         /min-width:\s*0;/.test(mobBlock) && /max-height:\s*none;/.test(mobBlock) && /height:\s*auto;/.test(mobBlock));
+})();
+
+/* ============================================================
+   ★★ P105：首页 = "两个角"（大字右下 / 小字右上，各自钉在画框的刻线上）
+   ------------------------------------------------------------
+   对得上的原理：`.hero` 的 padding 和 `.draft-frame` 的 top/right/bottom
+   用的是**同一套令牌** → 只要内容的定位基准 = `.hero` 的 padding box，
+   它的右/上/下三条边就和刻线框那三条边严丝合缝 ✓。这里把这条等式钉住。
+   ============================================================ */
+section('[2ah] 首页布局：两个角对齐画框刻线（P105）');
+(function heroCorners() {
+    const secBlk = (cssNC.match(/\.section,\s*\.hero\s*\{[^}]*\}/) || [''])[0];
+    const frameBlk = (cssNC.match(/\.draft-frame\s*\{[^}]*\}/) || [''])[0];
+    const boxBlk = (cssNC.match(/\.hero-box\s*\{[^}]*\}/) || [''])[0];
+    const contentBlk = (cssNC.match(/\.hero-content\s*\{[^}]*\}/) || [''])[0];
+    const h1Blk = (cssNC.match(/\.hero h1\s*\{[^}]*\}/g) || []).join(' ');
+    const subBlk = (cssNC.match(/\.hero-content \.subtitle\s*\{[^}]*\}/) || [''])[0];
+
+    /* ① 两条边用同一套令牌 —— 这是"严丝合缝"的全部依据 */
+    ok('★★ P105：首页的留白和画框（.draft-frame）用的是**同一套令牌** ——'
+        + 'v-inset 管上边、gutter 管右边、safe-b 管下边 ✓',
+        /padding:\s*var\(--v-inset\)\s+var\(--gutter\)\s+var\(--safe-b\)/.test(secBlk) &&
+        /top:\s*var\(--v-inset\)/.test(frameBlk) &&
+        /right:\s*var\(--gutter\)/.test(frameBlk) &&
+        /bottom:\s*var\(--safe-b\)/.test(frameBlk),
+        'hero padding=' + ((/padding:[^;]*/.exec(secBlk) || [''])[0]));
+
+    /* ② 定位链：.hero 当祖先 → .hero-box 铺满 → .hero-content 绝对定位 inset: 0 */
+    /* ★ 认法：`/\.hero \{/` 第一处会撞上 `.section, .hero {` 那条组合规则 ✗ ——
+       所以挑"带 text-align: right"的那一条（P105 给 .hero 加的那条）✓ */
+    const heroBlk = (cssNC.match(/\.hero\s*\{[^}]*text-align:\s*right[^}]*\}/) || [''])[0];
+    ok('★★ P105：定位链对得上 —— `.hero` 是定位祖先、`.hero-box` 铺满整屏、'
+        + '`.hero-content` 绝对定位 `inset: 0`（= .hero 的 padding box = 画框那三条边）',
+        /position:\s*relative/.test(heroBlk) &&
+        /width:\s*100%/.test(boxBlk) && /height:\s*100%/.test(boxBlk) &&
+        /position:\s*absolute/.test(contentBlk) && /inset:\s*0/.test(contentBlk) &&
+        /text-align:\s*right/.test(contentBlk) &&
+        /* ★★ 反面：这条**不许**写 pointer-events: none —— crosshair.js 用
+           elementFromPoint 找悬停目标，写了 h1 的 .is-hot 就永远命中不到 ✗ */
+        !/pointer-events/.test(contentBlk),
+        'hero=' + heroBlk.replace(/\s+/g, ' ').slice(0, 60));
+    /* ★★★ P105b（你报的"4K 下右边还差 450px"）：.hero-box 同时是 `.container`，
+       而 `.container { max-width: 960px }` 会把它卡住、再 `margin: 0 auto` 居中 ——
+       于是内容右边缘跑到屏幕中间去了 ✗。首页这块必须把上限解开 ✓ */
+    ok('★★★ P105b：`.hero-box` 必须把 `.container` 的 `max-width: 960px` **解开**'
+        + '（不然 4K 下它只有 960px 宽、还居中 → 右边缘离刻线差半屏 ✗）',
+        /max-width:\s*none/.test(boxBlk),
+        boxBlk.replace(/\s+/g, ' ').slice(0, 110));
+
+    /* ③ 两个角的锚点本身 */
+    ok('★★ P105：大字（h1）钉在**右下角**（absolute + right: 0 + bottom: 0）'
+        + '—— 也就是画框右下角那个刻线上 ✓',
+        /position:\s*absolute/.test(h1Blk) && /right:\s*0/.test(h1Blk) &&
+        /bottom:\s*0/.test(h1Blk) && /line-height:\s*1(;|\s)/.test(h1Blk),
+        h1Blk.replace(/\s+/g, ' ').slice(0, 90));
+    ok('★★ P105：小字（.subtitle）钉在**右上角**（absolute + right: 0 + top: 0）'
+        + '—— 也就是画框右上角那个刻线上 ✓',
+        /position:\s*absolute/.test(subBlk) && /right:\s*0/.test(subBlk) &&
+        /top:\s*0/.test(subBlk), subBlk.replace(/\s+/g, ' ').slice(0, 90));
+
+    /* ④ 首页那块按钮确实没了（HTML + CSS 一起） */
+    ok('★★ P105：首页那排按钮删干净了（HTML 里没有 .hero-buttons / 那三个按钮，'
+        + 'CSS 里也没有 .hero-buttons 规则）—— 入口在导航栏「玩游戏」那一条 ✓',
+        !/hero-buttons/.test(html) && !/hero-buttons/.test(cssNC) &&
+        !/class="btn primary"/.test(html) && !/class="btn ghost"/.test(html) &&
+        /* `.btn` 那套样式**留着**（站里别处还用得上）✓ */
+        /\.btn\s*\{/.test(cssNC));
+    /* ⑤ 原来那条"给内容做视觉补偿"的 translateX 必须删掉 —— 它会推开右边缘 ✗ */
+    ok('★ P105：`.hero .container` 那条 `translateX(-nav/2)` 已经删掉'
+        + '（内容改成右对齐之后，它会把右边缘推开 37.5px ✗）',
+        !/\.hero\s+\.container\s*\{[^}]*translateX/.test(cssNC));
+
+    /* ⑥ 手机上：`.hero` 必须还是"一屏 + 左右留白" ——
+       否则绝对定位的内容没有可贴的盒子（会变成 0 高、两行字叠在顶上 ✗） */
+    ok('★ P105：手机上首页仍然是一屏 + 左右留白（覆盖掉"手机上 height: auto"那条）',
+        /\.hero\s*\{\s*\n\s*height:\s*100vh;\s*\n\s*height:\s*100dvh;\s*\n\s*min-height:\s*100dvh;\s*\n\s*max-height:\s*100dvh;\s*\n\s*padding:\s*var\(--v-inset\)\s+var\(--gutter\)\s+var\(--safe-b\);/.test(cssNC));
+})();
+
+/* ============================================================
+   [2ai] 滚动进场 + 首页那两个角：终端 / 数据（P106）
+   ------------------------------------------------------------
+   从参考站 openilink.com 搬来三样：滚动进场 / 终端块 / 大号数字。
+   这里钉的都是"坏了也看不出来"的地方：
+     · 隐藏态只能挂在 html.reveal-on 之下 —— 脚本没跑起来时必须正常可见，
+       否则就是一片白（而白屏没人能靠肉眼判断是脚本挂了还是还没滚到）；
+     · 位移只能用 translate —— 面板身上已经有 transform 的悬停/换图动画，
+       写 transform 会把它们顶掉；
+     · 首页那两个角不许写 pointer-events: none（准星靠 elementFromPoint
+       找悬停目标，写了就永远命中不到）；
+     · 数字必须**数出来**，不能在 HTML 里写死一个会过期的数。
+   ============================================================ */
+section('[2ai] 滚动进场 + 首页两个角：终端 / 数据（P106）');
+(function revealAndCorners() {
+    const revJs = read('js/reveal.js');
+    const heroJs = read('js/hero-console.js');
+    const htmlNoC = html.replace(/<!--[\s\S]*?-->/g, '');
+    const hi = htmlNoC.indexOf('<div class="hero-content">');
+    const heroSlice = hi < 0 ? '' : htmlNoC.slice(hi, htmlNoC.indexOf('</section>', hi));
+
+    /* ---------- ① HTML 骨架 ---------- */
+    ok('★ P106：首页有终端块（.hero-term > pre.hero-term-body），正文留空给 JS 打',
+        /class="hero-term"[^>]*data-hero="term"/.test(heroSlice) &&
+        /data-hero="term-body">\s*<\/pre>/.test(heroSlice));
+    ok('★ P106：终端块是装饰（aria-hidden）—— 读屏器念一串命令行只是噪音',
+        /class="hero-term"[^>]*aria-hidden="true"/.test(heroSlice));
+
+    /* ★ 数据角的落点不写死名字：从 JS 里 setStat('…') 的那两个名字反推，
+       两边名字一旦漂了（改了 HTML 没改 JS）这条就会响 ✓ */
+    const statNames = [...heroJs.matchAll(/setStat\('([^']+)'/g)].map(x => x[1]);
+    const statInHtml = [...new Set(statNames)].filter(n => new RegExp('data-stat="' + n + '"').test(heroSlice));
+    ok('★★ P106：数据角的每个数字在 HTML 里都有落点（' + [...new Set(statNames)].join(', ') + '）',
+        new Set(statNames).size >= 2 && statInHtml.length === new Set(statNames).size,
+        'HTML 里缺: ' + [...new Set(statNames)].filter(n => !statInHtml.includes(n)).join(', '));
+
+    const hsInit = [...heroSlice.matchAll(/class="hs-num"[^>]*>([^<]*)</g)].map(x => x[1].trim());
+    ok('★★ P106：数字不在 HTML 里写死（初值只能是 "--"，由 JS 数出来）',
+        hsInit.length >= 2 && hsInit.every(t => t === '--'), hsInit.join(' | '));
+
+    /* ---------- ② 数字怎么来的 ---------- */
+    ok("★★ P106：游戏数是**数出来的**（WORKS 里 kind === 'unity' 的条数），不是写死的",
+        /window\.WORKS/.test(heroJs) && /'unity'/.test(heroJs));
+    ok('★★ P106：方向数 = 页面上媒体面板的个数（手写在 HTML 里的，只能数 DOM）',
+        /querySelectorAll\('\.media-panel'\)/.test(heroJs));
+    ok('★ P106：取不到数据时留 "--"，不在首页上显示一个假的 00',
+        /'--'/.test(heroJs));
+
+    const unityCount = (codeOnly(worksSrc).match(/kind:\s*'unity'/g) || []).length;
+    const panelCount = (htmlNoC.match(/class="media-panel"/g) || []).length;
+    ok('★ P106：现在真的能数出数（游戏 ' + unityCount + ' 套 / 方向 ' + panelCount + ' 个）',
+        unityCount > 0 && panelCount > 0);
+
+    /* ---------- ③ 终端的行为 ---------- */
+    ok('★★ P106：终端在降低动效下**一次写完**（不留计时器）',
+        /prefers-reduced-motion: reduce/.test(heroJs) && /el\.textContent = full;/.test(heroJs));
+    ok('★★ P106：终端等开屏拉开再敲（否则那几秒全被遮罩盖着，等于白打）',
+        /World\.gate/.test(heroJs));
+    ok('★ P106：光标不是 JS 画的（纯 CSS 的 ::after，跟着最后一个字走）',
+        !/cursor/i.test(heroJs) && /\.hero-term-body::after\s*\{[^}]*animation:\s*termBlink/.test(cssNC));
+
+    /* ---------- ④ 进场的机制 ---------- */
+    const revBlk = (cssNC.match(/html\.reveal-on \[data-reveal\]\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P106：隐藏态只挂在 html.reveal-on 之下（脚本没跑起来时页面正常可见，不会白屏）',
+        /opacity:\s*0/.test(revBlk) && /translate:\s*0/.test(revBlk));
+    ok('★★ P106：位移用 translate、**不用** transform（面板身上已有 transform 动画，会互相顶掉）',
+        /translate:/.test(revBlk) && !/transform:/.test(revBlk), revBlk.replace(/\s+/g, ' ').slice(0, 80));
+    ok('★ P106：HTML 里没有预置 reveal-on（那个类只能由 JS 加）', !/reveal-on/.test(htmlNoC));
+
+    ok('★★ P106：先亮出 reveal-on、再加观察器（顺序反了会有一帧"藏起来没人放行"）',
+        revJs.indexOf("classList.add('reveal-on')") > 0 &&
+        revJs.indexOf("classList.add('reveal-on')") < revJs.indexOf('new window.IntersectionObserver'));
+    ok('★★ P106：等开屏结束才开始观察（World.gate）—— 否则视口里的元素在遮罩底下就演完了',
+        /World\.gate/.test(revJs));
+    ok('★★ P106：降低动效 / 没有 IntersectionObserver 时立刻全部可见（绝不留下藏着的元素）',
+        /REDUCE[^;]*\|\|[\s\S]{0,60}IntersectionObserver/.test(revJs) &&
+        /function showAll/.test(revJs));
+    ok('★ P106：只演一次（进过视口就 unobserve，滚回去不重播）', /io\.unobserve/.test(revJs));
+    ok('★ P106：错开延迟 = 同组序号 × 100ms（P107 起对齐参考站的 delay: .1），'
+        + '同组按**父元素**分组（不被页面上别处的元素带跑）',
+        /STAGGER_MS = 100/.test(revJs) && /--reveal-i/.test(revJs) &&
+        /parentElement/.test(revJs) && /calc\(var\(--reveal-i, 0\) \* 100ms\)/.test(cssNC));
+
+    /* 挂了 data-reveal 的元素：面板要**全都有**（同组错开才有节奏感） */
+    const panelRev = (htmlNoC.match(/class="media-panel"[^>]*data-reveal/g) || []).length;
+    ok('★ P106：四只媒体面板都挂了 data-reveal（' + panelRev + '/' + panelCount + '）',
+        panelCount > 0 && panelRev === panelCount);
+
+    /* ---------- ⑤ 两个角的位置 ---------- */
+    const termBlk = (cssNC.match(/\.hero-term\s*\{[^}]*\}/) || [''])[0];
+    const statBlk = (cssNC.match(/\.hero-stats\s*\{[^}]*\}/) || [''])[0];
+    const numBlk = (cssNC.match(/\.hs-num\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P106→P108：终端钉在**左下角**，而且是 `fixed`（不随页面滚 —— '
+        + '定位用的是 `.df-bl` 那两个令牌，所以和左下角刻线严丝合缝）',
+        /position:\s*fixed/.test(termBlk) &&
+        /left:\s*var\(--content-x\)/.test(termBlk) &&
+        /bottom:\s*var\(--safe-b\)/.test(termBlk),
+        termBlk.replace(/\s+/g, ' ').slice(0, 100));
+    ok('★★ P106：数据角钉在**左上角**（absolute + left: 0 + top: 0）',
+        /position:\s*absolute/.test(statBlk) && /left:\s*0/.test(statBlk) && /top:\s*0/.test(statBlk),
+        statBlk.replace(/\s+/g, ' ').slice(0, 80));
+    ok('★★ P106：这两个角都不许写 pointer-events: none（准星用 elementFromPoint 找悬停目标）',
+        !/pointer-events/.test(termBlk) && !/pointer-events/.test(statBlk));
+    ok('★ P106：数字是等宽 + tabular-nums（位数一变不会左右抖）',
+        /ui-monospace/.test(numBlk) && /tabular-nums/.test(numBlk));
+
+    /* 小屏：这两个角必须藏掉（跟着 max-width: 768px 那条一起走的） */
+    let hiddenOnMobile = false;
+    {
+        const reMq = /@media \(max-width: 768px\)\s*\{/g;
+        let mq;
+        while ((mq = reMq.exec(cssNC))) {
+            let depth = 0, j = mq.index + mq[0].length - 1;
+            for (; j < cssNC.length; j++) {
+                if (cssNC[j] === '{') depth++;
+                else if (cssNC[j] === '}') { depth--; if (!depth) break; }
+            }
+            const body = cssNC.slice(mq.index, j);
+            if (/\.hero-stats/.test(body) && /\.hero-term/.test(body) && /display:\s*none/.test(body)) {
+                hiddenOnMobile = true;
+                break;
+            }
+        }
+    }
+    ok('★ P106：小屏（≤768px）把这两个角藏掉 —— 窄屏只有一条，四个角会互相压', hiddenOnMobile);
+})();
+
+/* ============================================================
+   [2aj] 照参考站存档对齐的三个数 + 大字「解码」（P107）
+   ------------------------------------------------------------
+   你把 openilink.com 存到了 `_ref/OpeniLink`，所以这一节的数值不是"看感觉"
+   定的，是从存档里挖出来的源码抄的：
+     · `FadeIn`  —— 滚动进场：`{opacity:0, y:24}`、`duration: .5`、
+                    `ease: [.21,.47,.32,.98]`、`viewport: {once, margin:'-50px'}`；
+     · 数据角   —— `text-2xl font-black md:text-3xl` + `font-mono text-xs
+                    uppercase tracking-wider` + `gap-12`；
+     · 命令条   —— `rounded-lg border …/px-4 py-3/font-mono text-sm/backdrop-blur`；
+     · `HyperText` —— 首页大标题的真身：**线性解码**（未揭示的位每帧换成随机 A~Z），
+                    不是位移遮罩。参数 `duration: 1200 / 1000`、hover 重播。
+   这条路径以后要是有人"顺手优化"回去了，这里会红。
+   ============================================================ */
+section('[2aj] 对齐参考站：进场 / 数据角 / 命令条 / 解码（P107）');
+(function alignToReference() {
+    const revJs = read('js/reveal.js');
+    const hyperJs = read('js/hyper-text.js');
+    const htmlNoC = html.replace(/<!--[\s\S]*?-->/g, '');
+
+    /* ---------- ① 进场参数 = FadeIn ---------- */
+    const revBlk = (cssNC.match(/html\.reveal-on \[data-reveal\]\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P107：进场 = 参考站的 FadeIn（500ms / y:24 / ease .21,.47,.32,.98）',
+        /--reveal-dur:\s*500ms/.test(revBlk) &&
+        /translate:\s*0 var\(--reveal-y, 24px\)/.test(revBlk) &&
+        /cubic-bezier\(0\.21, 0\.47, 0\.32, 0\.98\)/.test(revBlk),
+        revBlk.replace(/\s+/g, ' ').slice(0, 120));
+    ok('★★ P107：观察参数 = FadeIn 的 `viewport: {once, margin: "-50px"}`',
+        /rootMargin:\s*'-50px'/.test(revJs) && /threshold:\s*0\b/.test(revJs),
+        (revJs.match(/rootMargin[^,}]*/) || [''])[0]);
+
+    /* ---------- ② 数据角 = text-2xl/font-black/…/gap-12 ---------- */
+    const statBlk = (cssNC.match(/\.hero-stats\s*\{[^}]*\}/) || [''])[0];
+    const numBlk = (cssNC.match(/\.hs-num\s*\{[^}]*\}/) || [''])[0];
+    const labBlk = (cssNC.match(/\.hs-label\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P107：数据角 = 参考站的 `gap-12`（48px）',
+        /gap:\s*48px/.test(statBlk), statBlk.replace(/\s+/g, ' ').slice(0, 70));
+    ok('★★ P107：数字 = `text-2xl font-black md:text-3xl`（24px / 媒体查询里 30px / 字重 900）',
+        /font-size:\s*1\.5rem/.test(numBlk) && /font-weight:\s*900/.test(numBlk) &&
+        /@media \(min-width: 769px\)\s*\{\s*\.hs-num\s*\{\s*font-size:\s*1\.875rem/.test(cssNC),
+        numBlk.replace(/\s+/g, ' ').slice(0, 90));
+    ok('★★ P107：标签 = `text-xs uppercase tracking-wider`（12px / .05em / 大写）',
+        /font-size:\s*0\.75rem/.test(labBlk) && /letter-spacing:\s*0\.05em/.test(labBlk) &&
+        /text-transform:\s*uppercase/.test(labBlk),
+        labBlk.replace(/\s+/g, ' ').slice(0, 90));
+
+    /* ---------- ③ 终端块：P108 起是**裸文字**（外壳已按你的要求去掉）---------- */
+    const termBlk = (cssNC.match(/\.hero-term\s*\{[^}]*\}/) || [''])[0];
+    ok('★★ P108：终端块**没有外壳**了（不要圆角 / 描边 / 底色 / 模糊 —— '
+        + 'P107 套过的"命令条壳"是参考站那条安装命令的样式，你说不需要）',
+        !/border-radius/.test(termBlk) && !/border\s*:/.test(termBlk) &&
+        !/background/.test(termBlk) && !/backdrop-filter/.test(termBlk) &&
+        !/padding\s*:/.test(termBlk) && !/color-mix/.test(termBlk),
+        termBlk.replace(/\s+/g, ' ').slice(0, 120));
+    ok('★ P108：裸文字之后字号回落到 0.8rem（14px 是给"有壳的条"用的，裸着太大）',
+        /font-size:\s*0\.8rem/.test(termBlk) && /color:\s*var\(--text-muted\)/.test(termBlk));
+    ok('★ P107：仍然不许写死参考站的 neutral 色阶（站里要跟主题走）',
+        !/#[0-9a-fA-F]{3,8}/.test(termBlk));
+    /* 保住 P106 那条不变量：不许吃指针 */
+    ok('★ P106/P108：终端不许写 pointer-events（准星用 elementFromPoint 找悬停目标）',
+        !/pointer-events/.test(termBlk));
+
+    /* ---------- ④ HyperText：解码（P109 起**暂时整块不接线**）---------- */
+    ok('★★ P107/P109：`js/hyper-text.js` 还挂在页面上（机器留着），'
+        + '但**没有任何元素接它** —— 首页大字和「联系我」都保持静态 ✓',
+        fs.existsSync(path.join(ROOT, 'js/hyper-text.js')) &&
+        /src="js\/hyper-text\.js"/.test(htmlNoC) &&
+        !/<h1[^>]*data-hyper/.test(htmlNoC) &&
+        !/<h2[^>]*data-hyper-view/.test(htmlNoC));
+    ok('★★ P107：解码就是参考站那套 —— 随机字符集是 A~Z，未揭示的位每帧换一个',
+        /CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'/.test(hyperJs) &&
+        /Math\.random\(\) \* CHARSET\.length/.test(hyperJs));
+    ok('★★ P107：线性揭示（进度 × 总字数，逐位往后推），不是遮罩位移',
+        /p \* total/.test(hyperJs) && /gi <= limit/.test(hyperJs) &&
+        !/translateY|clip-path/.test(hyperJs));
+    ok('★★ P107：跑完必须**还原原文**（标题宽度被 js/home-underline.js 量去算下划线，'
+        + '停在随机字上就永远歪了）',
+        /function restore\(\)/.test(hyperJs) && /nodes\[i\]\.nodeValue = originals\[i\]/.test(hyperJs) &&
+        /restore\(\);\s*\n\s*running\.delete/.test(hyperJs));
+    /* ★ 这条要看**代码**：注释里正好写着"不用 innerHTML"这句话，
+       直接对源码 grep 会被自己的注释绊倒（和 [2b] 里 Crunch-Light 那个坑一样）*/
+    ok('★★ P107：只改文本节点的值，不重建 DOM（否则 `.highlight` 那个变色 span 会被冲掉）',
+        /createTreeWalker/.test(hyperJs) && /nodeValue/.test(hyperJs) &&
+        !/innerHTML/.test(codeOnly(hyperJs)));
+    ok('★★ P107：降低动效下一次都不跑（连 hover 重播都不挂）',
+        /REDUCE/.test(hyperJs) && /if \(!el \|\| REDUCE\) return/.test(hyperJs) &&
+        /HOVER_REPLAY && !REDUCE/.test(hyperJs));
+    ok('★ P107：进视口的观察参数和参考站一致（threshold .1 / -30% 上下）',
+        /threshold:\s*0\.1/.test(hyperJs) && /rootMargin:\s*'-30% 0px -30% 0px'/.test(hyperJs));
+    ok('★ P107：首页大字等开屏拉开才解码（否则 1.2s 全在遮罩底下演完）',
+        /World\.gate/.test(hyperJs));
+    ok('★ P107：正在解码时不打断自己（hover 重播要判"忙不忙"）',
+        /if \(running\.has\(el\)\) return/.test(hyperJs));
+})();
+
+/* ============================================================
+   [2ak] 解码三拍（机器留着、首页先不接）+ 终端裸文字 / 固定（P108 → P109）
+   ------------------------------------------------------------
+   P108 定下的三件事实在这里钉住：
+     ① `[data-hyper]` 那批要**真的被调用**（P107 只 bind 没 call ——
+        那就是"鼠标放上去才开始闪"的真凶）；
+     ② 解码是三拍：一片空白 → 整行随机字 → 逐一解码；
+     ③ 终端不要外壳、钉死在左下角刻线上（fixed，不随页面滚）。
+   ★ P109：首页大字**先保持静态**（拿掉了 `data-hyper`），终端的"打完渐隐"
+     也撤掉了（它当时压根没生效，原因见下面那条注释）—— 机器全部留着，
+     谁想接回去，加一个属性 / 加一段 CSS 就行 ✓
+   ============================================================ */
+section('[2ak] 解码三拍（暂不接首页）+ 终端：裸文字 / 固定（P108 → P109）');
+(function threeBeats() {
+    const hyperJs = read('js/hyper-text.js');
+    const consoleJs = read('js/hero-console.js');
+    const htmlNoC = html.replace(/<!--[\s\S]*?-->/g, '');
+
+    /* ---------- ① 自己跑起来（P107 的 bug）---------- */
+    ok('★★★ P108：`[data-hyper]` 那批必须在开屏后**真的被调用**'
+        + '（P107 只 bind 没 call —— 那就是"只有 hover 才闪"的原因），'
+        + '并且有一个 START_DELAY 的缓冲',
+        /querySelectorAll\('\[data-hyper\]'\)[\s\S]{0,260}?run\(\{\s*delay:\s*START_DELAY\s*\}\)/.test(hyperJs),
+        (hyperJs.match(/querySelectorAll\('\[data-hyper\]'\)[\s\S]{0,120}/) || [''])[0].replace(/\s+/g, ' '));
+
+    /* ---------- ② 三拍 ---------- */
+    ok('★★ P108：三拍都在（BLANK_MS / RANDOM_MS / 解码时长），解码从 BLANK+RANDOM 之后才算起',
+        /BLANK_MS = 180/.test(hyperJs) && /RANDOM_MS = 300/.test(hyperJs) &&
+        /decodeAt = blankMs \+ randomMs/.test(hyperJs) &&
+        /\(t - decodeAt\) \/ duration/.test(hyperJs));
+    ok('★★ P108：第一拍是**空白**，用 opacity 藏而不是把字清空'
+        + '（清空会让标题框宽度塌掉，下划线是量标题算的）',
+        /el\.style\.opacity = '0'/.test(hyperJs) &&
+        /if \(t < blankMs\)/.test(hyperJs) &&
+        /* 反面：这段时间里不许写 nodeValue（写了就是"清空"那条路）*/
+        (function () {
+            const seg = hyperJs.slice(hyperJs.indexOf('if (t < blankMs)'), hyperJs.indexOf('if (t < blankMs)') + 220);
+            return !/nodeValue\s*=/.test(seg);
+        })());
+    ok('★★ P108：第二拍整行随机（limit = 0 时每一位都是随机字），第三拍逐位揭示',
+        /function paint\(limit\)/.test(hyperJs) && /gi <= limit/.test(hyperJs) &&
+        /paint\(p \* total\)/.test(hyperJs));
+    ok('★ P108：跑完把 opacity 还回去（不能留一个内联 opacity: 0 在标题上）',
+        /el\.style\.opacity = ''/.test(hyperJs));
+
+    /* ---------- ③ 终端：固定（不随页面滚）---------- */
+    ok('★★ P108：终端是 fixed（不随页面滚）+ 用 `.df-bl` 那两个令牌钉在左下角刻线上',
+        /\.hero-term\s*\{[^}]*position:\s*fixed[^}]*left:\s*var\(--content-x\)[^}]*bottom:\s*var\(--safe-b\)/.test(cssNC));
+    ok('★★ P108：游乐区展开时终端要退场（它挂在 `.hero` 那个第 11 层的上下文里，'
+        + '不藏就会浮在 0 层的游戏画面上）',
+        /body\.sidebar-open \.hero-term\s*\{[^}]*opacity:\s*0[^}]*visibility:\s*hidden/.test(cssNC));
+    ok('★ P108：HTML 里仍是空壳（内容由 JS 打），且没有把它挪出 `.hero-content`',
+        /data-hero="term-body">\s*<\/pre>/.test(htmlNoC));
+
+    /* ---------- ④ P109：两条退路都撤干净了 ---------- */
+    ok('★★ P109：首页大字**保持静态** —— `<h1>` 上没有 `data-hyper`'
+        + '（解码机器还留着，以后加回这个属性就能接上）',
+        !/<h1[^>]*data-hyper/.test(htmlNoC) && /src="js\/hyper-text\.js"/.test(htmlNoC));
+    ok('★★ P109：终端"打完渐隐"撤干净了 —— 没有 `.is-done` 规则、'
+        + '没有 `HOLD_MS` / `scheduleFade`，也不再有那条 opacity 过渡',
+        !/\.hero-term\.is-done/.test(cssNC) &&
+        !/HOLD_MS/.test(codeOnly(consoleJs)) &&
+        !/scheduleFade/.test(codeOnly(consoleJs)) &&
+        /* ★ 只认**裸的** `.hero-term {` 那条：`body.sidebar-open .hero-term`
+           里还有一条 `transition: opacity`（退场用，那条要留着），
+           用不带锚点的正则会把它也扫进来 ✗ */
+        !/transition\s*:\s*opacity/.test((cssNC.match(/^\.hero-term\s*\{[^}]*\}/m) || [''])[0]));
 })();
 
 /* ============================================================
@@ -624,8 +990,12 @@ section('[2o] 侧边栏：推开式游乐区（P63）');
         html.indexOf('id="play-sidebar"') > html.indexOf('</dialog>') &&
         html.indexOf('id="play-sidebar"') > html.lastIndexOf('</main>') &&
         html.indexOf('id="play-sidebar"') < html.indexOf('</body>'));
-    ok('★ 开关在首页 hero 里（data-play="open" + aria-controls 指向侧边栏）',
-        /<button[^>]*data-play="open"[^>]*aria-controls="play-sidebar"/.test(html));
+    ok('★★ P105：开关搬进了**导航栏**（首页那块按钮已经删掉 ✓）——'
+        + '`data-play="open"` + aria-controls 指向侧边栏，而且它在 .nav-links 里',
+        /<a[^>]*data-play="open"[^>]*aria-controls="play-sidebar"/.test(html) &&
+        html.indexOf('data-play="open"') > html.indexOf('class="nav-links"') &&
+        html.indexOf('data-play="open"') < html.indexOf('</nav>') &&
+        !/hero-buttons/.test(html) && !/class="btn primary"/.test(html));
     ok('★ 脚本排在 <aside> 之后（就地查元素，排前面会静静地不启用）',
         html.indexOf('src="js/sidebar.js"') > html.indexOf('id="play-sidebar"'));
 

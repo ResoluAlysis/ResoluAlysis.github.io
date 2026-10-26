@@ -130,7 +130,13 @@
                 <a href="#home" class="logo">RA</a>
                 <nav>
                     <ul class="nav-links">
-                        <li><a href="#about">test</a></li>
+                        <!-- ★★ P105：首页那个「玩游戏」按钮搬到了这里 ——
+                             导航栏本来就是那一列入口，首页不再需要按钮 ✓。
+                             （它是 `data-play="open"`，js/sidebar.js 会把它当"开游乐区"的开关，
+                               并自己 preventDefault，所以 href 只是给没 JS 时的兜底 ✓） -->
+                        <li><a href="#home" data-play="open" aria-expanded="false"
+                                aria-controls="play-sidebar">玩游戏</a></li>
+                        <!-- <li><a href="#about">test</a></li> -->
                         <li><a href="#skills">test</a></li>
                         <li><a href="#projects">test</a></li>
                         <li><a href="#contact">test</a></li>
@@ -161,22 +167,47 @@
 
         <main>
 
-            <!-- 首页 -->
+            <!-- 首页
+                 ★★ P105：布局改成"两个角"——
+                   大字（h1）的**右下角**钉在画框右下角那个刻线上；
+                   小字（.subtitle）的**右上角**钉在右上角那个刻线上 ✓
+                   （坐标全部取自 `.hero` 的 padding，而它和 `.draft-frame` 用的是同一套令牌，
+                     所以两边严丝合缝 —— 见 style.css 里 P105 那一段 ✓）
+                 ★ 按钮整块删掉了：入口都搬到导航栏了（「玩游戏」那一条）✓ -->
             <section id="home" class="hero">
                 <div class="container hero-box">
 
                     <!-- 内容层 -->
                     <div class="hero-content">
+                        <!-- ★★ P109：大字的「解码」动效**先撤掉**，标题保持静态 ✓
+                             （`JS/js/hyper-text.js` 还在，以后想接回去只要给元素加
+                               `data-hyper="1200"`（开屏后跑）或
+                               `data-hyper-view="1000"`（进视口跑）即可） -->
                         <h1><span class="highlight">ResoluAlysis</span></h1>
                         <p class="subtitle">这里是 ResoluAlysis 的个人页，施工中尽情期待</p>
-                        <div class="hero-buttons">
-                            <!-- ★ P63：首页第一个按钮不再是"看作品"，而是"来玩" ——
-                                 点击 = 打开左侧游乐区（整站右移让位），
-                                 见 js/sidebar.js 与 style.css 第 9 节。 -->
-                            <button type="button" class="btn primary" data-play="open"
-                                aria-expanded="false" aria-controls="play-sidebar">玩游戏</button>
-                            <a href="#projects" class="btn ghost">作品集</a>
-                            <a href="#contact" class="btn ghost">联系我</a>
+
+                        <!-- ★★ P106：左上角 —— 两个大号等宽数字 + 小标签。
+                             数字不是手写的：游戏数来自 data/works.js 里 kind === 'unity'
+                             的条数、方向数来自页面上 .media-panel 的个数，
+                             由 js/hero-console.js 填（加一套游戏它自己就变了 ✓）。
+                             取不到数据时留 "--"，不显示假的 00 ✓ -->
+                        <div class="hero-stats" data-hero="stats">
+                            <p class="hs-item">
+                                <span class="hs-num" data-stat="games">--</span>
+                                <span class="hs-label">游戏构筑</span>
+                            </p>
+                            <p class="hs-item">
+                                <span class="hs-num" data-stat="fields">--</span>
+                                <span class="hs-label">创作方向</span>
+                            </p>
+                        </div>
+
+                        <!-- ★★ P106：左下角 —— 终端块。文字由 js/hero-console.js 里
+                             那一个 LINES 数组一行行打出来，末尾的方块光标是
+                             CSS 的 `.hero-term-body::after`（纯 CSS 闪）✓
+                             ★ aria-hidden：它是**装饰**，读屏器念一串命令行只是噪音 ✓ -->
+                        <div class="hero-term" data-hero="term" aria-hidden="true">
+                            <pre class="hero-term-body" data-hero="term-body"></pre>
                         </div>
                     </div>
                 </div>
@@ -240,7 +271,7 @@
                 <!-- <h2 class="sr-only">多媒体</h2> -->
 
                 <div class="media-panels">
-                    <article class="media-panel" data-work="games" tabindex="0" role="button"
+                    <article class="media-panel" data-work="games" data-reveal tabindex="0" role="button"
                         aria-label="切换底图：游戏开发">
                         <span class="media-panel-no">04</span>
                         <div class="media-panel-main">
@@ -253,7 +284,7 @@
                         </div>
                     </article>
 
-                    <article class="media-panel" data-work="art-draw" tabindex="0" role="button"
+                    <article class="media-panel" data-work="art-draw" data-reveal tabindex="0" role="button"
                         aria-label="切换底图：绘画">
                         <span class="media-panel-no">01</span>
                         <div class="media-panel-main">
@@ -266,7 +297,7 @@
                         </div>
                     </article>
 
-                    <article class="media-panel" data-work="art-model" tabindex="0" role="button"
+                    <article class="media-panel" data-work="art-model" data-reveal tabindex="0" role="button"
                         aria-label="切换底图：建模">
                         <span class="media-panel-no">02</span>
                         <div class="media-panel-main">
@@ -279,7 +310,7 @@
                         </div>
                     </article>
 
-                    <article class="media-panel" data-work="music" tabindex="0" role="button"
+                    <article class="media-panel" data-work="music" data-reveal tabindex="0" role="button"
                         aria-label="切换底图：编曲">
                         <span class="media-panel-no">03</span>
                         <div class="media-panel-main">
@@ -307,8 +338,11 @@
             <!-- 联系我 -->
             <section id="contact" class="section alt-bg">
                 <div class="container">
-                    <h2>联系我</h2>
-                    <ul class="contact-list">
+                    <!-- ★ P106：`data-reveal` = 进视口时淡入 + 上抬（见 js/reveal.js）✓
+                         ★ P109：`data-hyper-view="1000"` 先拿掉了（解码动效暂停）——
+                           想给这一节接回"解码"，把它加回属性上就行 ✓ -->
+                    <h2 data-reveal>联系我</h2>
+                    <ul class="contact-list" data-reveal>
                         <li>GitHub: <a href="https://github.com/resolualysis" target="_blank" rel="noopener noreferrer">ResoluAlysis</a></li>
 
                     </ul>
@@ -551,6 +585,22 @@
          它在 IIFE 里就地查那个元素，放前面会查不到，
          然后静静地不启用（和浮窗控制器同一个坑）。 -->
     <script src="js/sidebar.js"></script>
+
+    <!-- ★★ P106：滚动进场（给 `[data-reveal]` 的元素用）。
+         它只挂一个观察器，排在哪儿都行；但它等 World.gate() 才启动，
+         而 World 来自 js/world.js（在 <main> 之后那批里）——
+         所以**必须**放在 world.js 后面 ✓ -->
+    <script src="js/reveal.js"></script>
+
+    <!-- ★★ P106：首页那两个角（左下终端 / 左上空置数据角）。
+         ★ 必须排在 data/works.js 之后：它要数 WORKS 里 kind === 'unity' 的条数 ✓ -->
+    <script src="js/hero-console.js"></script>
+
+    <!-- ★★ P107：大字的「解码」入场（参考站 openilink.com 首页大标题的真身）。
+         数据属性驱动：`data-hyper="1200"` = 开屏拉开后跑；
+         `data-hyper-view="1000"` = 进视口才跑 ✓
+         ★ 排在 world.js 之后（它等 World.gate 才启动）✓ -->
+    <script src="js/hyper-text.js"></script>
 </body>
 
 </html>
