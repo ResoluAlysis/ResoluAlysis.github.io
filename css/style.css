@@ -6537,3 +6537,183 @@ body.sidebar-open .hero-term {
 .hero-content .subtitle {
     translate: max(0px, calc(var(--scroll-x, 0) * 1px - var(--sub-t, 999999px))) 0;
 }
+
+/* ============================================================================
+   ★★ P113：竖屏遮罩 —— "请横屏浏览"
+   ----------------------------------------------------------------------------
+   这个站是按横屏排的（横向滚动 + 四角刻线 + 一条 75px 高的贴边 HUD），
+   竖屏下它既不好看也不好用 —— 所以竖屏时直接盖一层，说清楚要横过来。
+
+   三层关系（你那句"在开屏动画下，页面内容、指针上"）：
+     · **在开屏动画之上**：它是整站最高的 `z-index: 2147483647`。
+       开屏那几层（红幕 / 网点 / WELCOME）、页面内容、准星与指针、
+       刻度尺……全在它下面 —— 转成竖屏的那一眼就该看见它，
+       而不是等 6 秒开屏演完再出现 ✓
+     · 它必须是 `<body>` 的直接子元素（`.page-zoom` 外面）：`.page-zoom` 开屏期间
+       挂着 transform，会变成 fixed 子元素的包含块，放在里面会跟着整页缩放 ✗
+     · 判定只用 CSS 媒体查询 `(orientation: portrait)`：转回横屏同一帧消失，
+       没有 JS 时序问题，也没有"脚本没跑起来就永远盖着"的风险 ✓
+       （`display: none` 的元素同时**不进无障碍树**，所以不需要 JS 改 aria-hidden）
+
+    JS（js/orientation-guard.js）只干 CSS 干不了的那件事：竖屏时把滚轮 /
+   触摸拖动 / 方向键拦掉 —— 遮罩不透明，但底下不该还在滚 ✓
+   ============================================================================ */
+.rotate-guard {
+    /* ★★ P113c（你的要求）：**渐出**。时长/曲线只在这里改 ✓ */
+    --guard-dur: 320ms;
+    --guard-ease: cubic-bezier(0.4, 0, 0.2, 1);   /* 和 --theme-ease 同一条 */
+
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;        /* ★ 整站最高，没有之一 */
+    /* ★★ P113c：**不能用 `display: none` 了** —— display 不参与过渡，
+       转回横屏时会"啪"一下消失，渐出根本来不及演 ✗
+       改成 opacity + visibility：
+         · 平时 opacity: 0 / visibility: hidden（也一样不进无障碍树 ✓，
+           也不吃点击 —— 见下面那行 pointer-events ✓）
+         · 竖屏时亮起来；转回横屏时 opacity 淡出 320ms，
+           visibility 用 `0s linear 320ms` 延迟到**淡完之后**才收 ✓
+           （如果 visibility 立刻变 hidden，那一刻就开始不绘制，同样看不到渐出）*/
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;       /* ★ 淡出那 320ms 里别再吃点击：底下马上就能用 ✓ */
+    transition:
+        opacity var(--guard-dur) var(--guard-ease),
+        visibility 0s linear var(--guard-dur);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    background: var(--bg-alt);
+    color: var(--text);
+    text-align: center;
+    cursor: auto;
+    /* 遮罩自己不该有滚动，也别把手势漏给底下的页面 */
+    overscroll-behavior: contain;
+    touch-action: none;
+}
+
+/* ★ 唯一的出现条件。横屏 / 桌面窗口都不出现 ✓ */
+@media (orientation: portrait) {
+
+    /* 竖屏时整页也不许滚（和遮罩同一条媒体查询，纯 CSS 兜底 ✓）*/
+    html {
+        overflow: hidden;
+    }
+
+    .rotate-guard {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        /* 出现这一趟：visibility 立刻生效（`0s linear 0s`），只淡 opacity ✓ */
+        transition:
+            opacity var(--guard-dur) var(--guard-ease),
+            visibility 0s linear 0s;
+    }
+}
+
+/* 图标位：默认是自绘 SVG；把 index.html 里那个 <img> 的 src 填上就换成你的图 ✓
+   ★ 尺寸统一放在这一层（两个候选都 100%）—— 换图只改一处 ✓ */
+.rotate-guard-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(56px, 15vw, 76px);
+    height: clamp(56px, 15vw, 76px);
+    margin: 0;
+}
+
+/* 自绘图标：一部竖着的手机 + 一个逆时针 90° 的箭头（用 --accent，跟全站同色）*/
+.rotate-guard-icon {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+    transform-origin: 50% 50%;
+    /* 来回摆一下 = "把手机转过来"。★ 是 infinite，所以降低动效那条必须同名关掉，
+       否则 0.01ms 周期会变成乱抖（自检 [2c] 会盯这条）
+       ★ 只有 SVG 会摆：换成 GIF 之后它自己就在动，再摆会翻倍 ✗ */
+    animation: guardTurn 2.6s ease-in-out infinite;
+}
+
+/* ★ P113b：可替换的位图（PNG / GIF / WebP）。默认 display: none ——
+   没填 src 时它连请求都不会发，也不会留一个破图图标 ✓ */
+.rotate-guard-img {
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* 像素画想要硬边就把下面这条打开 */
+    /* image-rendering: pixelated; */
+}
+
+/* js/orientation-guard.js 在"src 填了、并且真的加载成功"之后挂 .is-art → 换手 */
+.rotate-guard-art.is-art .rotate-guard-img {
+    display: block;
+}
+
+.rotate-guard-art.is-art .rotate-guard-icon {
+    display: none;
+}
+
+/* 停在 0° → 转 -90° 停一会儿 → 转回来，中间有停顿（不是匀速转圈）*/
+@keyframes guardTurn {
+
+    0%,
+    28% {
+        rotate: 0deg;
+    }
+
+    50%,
+    74% {
+        rotate: -90deg;
+    }
+
+    96%,
+    100% {
+        rotate: 0deg;
+    }
+}
+
+.rotate-guard-title {
+    margin: 26px 0 0;
+    font-size: clamp(1.5rem, 6vw, 2.2rem);
+    line-height: 1.15;
+    letter-spacing: 0.04em;
+    color: var(--text);
+}
+
+.rotate-guard-hint {
+    margin: 12px 0 0;
+    max-width: 18em;
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: var(--text-muted);
+}
+
+.rotate-guard-tag {
+    margin: 34px 0 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+    opacity: 0.85;
+}
+
+/* ----- 降低动效：图标不摆（就那么竖着）+ 遮罩不淡入淡出（直接切）-----
+   ★ 渐出是"好看"，不是"必要"：降低动效下任何过渡都是多余的动作 ✓
+   ★ 两条选择器都要**同名**（自检 [2c] 按名字配对）*/
+@media (prefers-reduced-motion: reduce) {
+
+    .rotate-guard-icon {
+        animation: none;
+    }
+
+    .rotate-guard {
+        transition: none;
+    }
+}

@@ -1007,6 +1007,176 @@ section('[2an] 同帧同步 + 物理像素对齐（P112）');
 })();
 
 /* ============================================================
+   [2ao] 竖屏遮罩：请横屏浏览（P113）
+   ------------------------------------------------------------
+   要求是"竖屏时盖一层，并且在开屏动画、页面内容、指针之上"。
+   能不能盖住开屏，取决于两件事，都在这里钉住：
+     ① 它是 `<body>` 的直接子元素（在 `.page-zoom` 外面）——
+        `.page-zoom` 开屏期间带 transform，是 fixed 子元素的包含块；
+     ② 它的 z-index 是全站最大的那个数（比准星 9997、刻度尺 99999 都高）。
+   显示与否只由 `@media (orientation: portrait)` 决定：脚本没跑起来也照样盖住 ✓
+   ============================================================ */
+section('[2ao] 竖屏遮罩：请横屏浏览（P113）');
+(function rotateGuard() {
+    const guardJs = read('js/orientation-guard.js');
+    const guardCode = codeOnly(guardJs);
+    const htmlNoC = html.replace(/<!--[\s\S]*?-->/g, '');
+    const mainCode = codeOnly(read('js/main.js'));
+
+    const blk = (cssNC.match(/\.rotate-guard\s*\{[^}]*\}/) || [''])[0];
+    const iconBlk = (cssNC.match(/\.rotate-guard-icon\s*\{[^}]*\}/) || [''])[0];
+
+    /* ---------- ① 位置：在 .page-zoom 外面（= body 的直接子元素） ---------- */
+    const guardAt = htmlNoC.indexOf('data-guard="rotate"');
+    /* ★ 锚点用 `.halftone-scan`：它是 `.page-zoom` 关掉之后的第一个 body 级节点
+       （不能拿注释当锚点 —— htmlNoC 已经把注释剥成空格了，踩过一次）*/
+    const zoomEnd = htmlNoC.indexOf('class="halftone-scan"');
+    const dialogAt = htmlNoC.indexOf('<dialog');
+    ok('★★★ P113：遮罩在 `.page-zoom` **外面**（否则开屏的 transform 会把它当成包含块，'
+        + '整层跟着缩放/错位）',
+        guardAt > 0 && zoomEnd > 0 && guardAt > zoomEnd && guardAt < dialogAt,
+        'guard@' + guardAt + ' / page-zoom 结束@' + zoomEnd + ' / dialog@' + dialogAt);
+
+    ok('★ P113：骨架齐（role=alert + 标题/提示/英文小标签 + 图标位）',
+        /role="alert"/.test(htmlNoC) && /class="rotate-guard-title"/.test(htmlNoC) &&
+        /class="rotate-guard-hint"/.test(htmlNoC) && /class="rotate-guard-tag"/.test(htmlNoC) &&
+        /class="rotate-guard-art"/.test(htmlNoC) &&
+        /* ★ 图标位里至少要有一个能显示的源：自绘 SVG 在，**或者** img 填了 src ✓
+           （你现在把 SVG 注掉了、填了 _Null.png —— 两种都算合格）*/
+        (/class="rotate-guard-icon"/.test(htmlNoC) ||
+            /<img[^>]*data-guard="art-img"[^>]*src="[^"]+"/.test(htmlNoC)));
+
+    /* ---------- ② 层级：必须比开屏/准星/刻度尺都高 ---------- */
+    const positiveZ = [...cssNC.matchAll(/z-index:\s*(\d+)/g)].map((m) => parseInt(m[1], 10));
+    const guardZ = parseInt((/z-index:\s*(\d+)/.exec(blk) || [0, '0'])[1], 10);
+    ok('★★★ P113：遮罩的 `z-index` 是**全站最大**的那个（开屏层 / 准星 9997 / '
+        + '刻度尺 99999 全在它下面）',
+        guardZ > 0 && guardZ === Math.max.apply(null, positiveZ),
+        'guard=' + guardZ + ' 全站最大=' + Math.max.apply(null, positiveZ));
+
+    ok('★★ P113：全屏 fixed（`inset: 0`）；平时是 `opacity: 0` + `visibility: hidden`'
+        + '（两者都让它不进无障碍树、也不吃点击），而 **不能用 `display: none`** —— '
+        + 'display 不参与过渡，转回横屏会"啪"一下消失，渐出根本来不及演 ✗',
+        /position:\s*fixed/.test(blk) && /inset:\s*0/.test(blk) &&
+        /opacity:\s*0/.test(blk) && /visibility:\s*hidden/.test(blk) &&
+        !/display:\s*none/.test(blk));
+
+    ok('★★★ P113c：渐出 = opacity 过渡 + `visibility` 延迟到淡完才收'
+        + '（`0s linear var(--guard-dur)`；若 visibility 立刻变 hidden，那一刻就停止绘制，'
+        + '同样看不到渐出）',
+        /transition:\s*opacity var\(--guard-dur\)[^;]*,\s*visibility 0s linear var\(--guard-dur\)/.test(blk),
+        (blk.match(/transition:[\s\S]{0,180}/) || [''])[0].replace(/\s+/g, ' '));
+
+    ok('★★ P113c：淡出那 320ms 里**不再吃点击**（底下马上可用）；'
+        + '竖屏态再把它打开（`pointer-events: auto`）',
+        /pointer-events:\s*none/.test(blk) &&
+        /@media \(orientation: portrait\)\s*\{[\s\S]{0,400}?\.rotate-guard\s*\{[^}]*pointer-events:\s*auto/.test(cssNC));
+
+    /* ★ 媒体查询块的取法：**不要**用一条超长正则去"顺着匹配"整块内容 ——
+       块里带注释（cssNC 会换成等长空格）和换行，一改注释就会挂 ✗
+       这里按花括号配平把块切出来，再逐个属性断言 ✓ */
+    function mqBodies(query) {
+        const needle = '@media ' + query;
+        const out = [];
+        let i = cssNC.indexOf(needle);
+        while (i >= 0) {
+            let d = 0, j = cssNC.indexOf('{', i);
+            for (; j < cssNC.length; j++) {
+                if (cssNC[j] === '{') d++;
+                else if (cssNC[j] === '}') { d--; if (!d) break; }
+            }
+            out.push(cssNC.slice(i, j));
+            i = cssNC.indexOf(needle, j);
+        }
+        return out;
+    }
+    const portraitBlk = mqBodies('(orientation: portrait)').join('\n');
+    const guardReduceBlk = mqBodies('(prefers-reduced-motion: reduce)')
+        .filter((s) => s.indexOf('.rotate-guard') >= 0).join('\n');
+
+    ok('★★★ P113c：出现条件仍然只有 `@media (orientation: portrait)`：'
+        + '那一刻 `opacity: 1` + `visibility: visible` + 恢复吃指针，'
+        + '而且 visibility **立刻**生效（`0s linear 0s`，只有 opacity 在淡入）',
+        /\.rotate-guard\s*\{/.test(portraitBlk) &&
+        /opacity:\s*1/.test(portraitBlk) &&
+        /visibility:\s*visible/.test(portraitBlk) &&
+        /pointer-events:\s*auto/.test(portraitBlk) &&
+        /visibility 0s linear 0s/.test(portraitBlk),
+        portraitBlk.replace(/\s+/g, ' ').slice(0, 150));
+
+    ok('★★ P113c：降低动效下不淡（`transition: none`，同名选择器）—— '
+        + '渐出是"好看"，不是"必要"',
+        /\.rotate-guard\s*\{\s*transition:\s*none/.test(guardReduceBlk),
+        guardReduceBlk.replace(/\s+/g, ' ').slice(0, 100));
+
+    ok('★ P113：竖屏时整页也停止滚动（同一条媒体查询里的 `html { overflow: hidden }`）',
+        /@media \(orientation: portrait\)\s*\{[\s\S]{0,120}html\s*\{\s*overflow:\s*hidden/.test(cssNC));
+
+    /* ---------- ③ 图标那圈"转一下"的提示 ---------- */
+    ok('★★ P113：图标是 infinite 摆动，且降低动效下**同名**关掉（否则 0.01ms 周期会乱抖）',
+        /animation:\s*guardTurn[^;]*infinite/.test(iconBlk) &&
+        /@keyframes guardTurn/.test(cssNC) &&
+        /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.rotate-guard-icon\s*\{\s*animation:\s*none/.test(cssNC));
+
+    /* ---------- ④ JS 只管拦输入，不管显示 ---------- */
+    ok('★★ P113：JS **不碰显示**（不许出现 style.display / classList 改遮罩）—— '
+        + '显示归 CSS，否则"脚本挂了就永远盖着 / 永远不盖"两种都会发生',
+        !/style\.display/.test(guardCode) && !/guard\.classList/.test(guardCode) &&
+        !/display\s*=/.test(guardCode));
+
+    ok('★★ P113：`matchMedia(\'(orientation: portrait)\')` + change 监听',
+        /matchMedia\('\(orientation: portrait\)'\)/.test(guardCode) &&
+        /addEventListener\('change'/.test(guardCode));
+    ok('★★ P113：拦截在 capture + passive: false 上做，并且 stopPropagation —— '
+        + 'js/main.js 的惯性滚轮是冒泡阶段的，这样它就收不到（一行都不用改 main.js）',
+        /capture:\s*true,\s*passive:\s*false/.test(guardCode) &&
+        /stopPropagation\(\)/.test(guardCode) && !/is-portrait/.test(mainCode));
+    ok('★ P113：浏览器快捷键不拦（Ctrl/Cmd/Alt 组合直接放行，否则连刷新都按不动）',
+        /e\.ctrlKey \|\| e\.metaKey \|\| e\.altKey/.test(guardCode));
+    ok('★ P113：导出 `window.OrientationGuard` 供排查',
+        /OrientationGuard/.test(guardCode) && /isActive/.test(guardCode));
+
+    /* ---------- ⑤ P113b：图标位可以换成自己的 PNG / GIF ---------- */
+    const artBlk = (cssNC.match(/\.rotate-guard-art\s*\{[^}]*\}/) || [''])[0];
+    const imgBlk = (cssNC.match(/\.rotate-guard-img\s*\{[^}]*\}/) || [''])[0];
+
+    ok('★★ P113b：图标位是一个**可替换的槽**（.rotate-guard-art 里放 <img>；自绘 SVG 可留可注掉），'
+        + '尺寸统一放在这一层 —— 换图只改一处',
+        /class="rotate-guard-art"/.test(htmlNoC) &&
+        /data-guard="art-img"/.test(htmlNoC) &&
+        /width:\s*clamp\(56px, 15vw, 76px\)/.test(artBlk));
+
+    /* ★ P113b：你现在已经把 src 填上了 —— 所以这条的口径改成
+       "要么不写（不发请求），要么必须是**真的存在**的文件" ✓ */
+    const artImgTag = (/<img[^>]*data-guard="art-img"[^>]*>/.exec(htmlNoC) || [''])[0];
+    const artSrc = artImgTag ? (/\bsrc="([^"]*)"/.exec(artImgTag) || [])[1] : undefined;
+    ok('★★ P113b：图标填了 src 就必须是真的文件（否则会静默退回自绘图标，而你可能没注视图标就上线了）',
+        !!artImgTag && (artSrc === undefined ||
+            (artSrc.length > 0 && fs.existsSync(path.join(ROOT, artSrc)))),
+        artSrc === undefined ? '（没填 src，用自绘 SVG）' : artSrc);
+    ok('★ P113b：不许写 `src=""`（空 src 会去请求页面本身）', !/\bsrc=""/.test(htmlNoC));
+
+    ok('★★ P113b：位图默认 `display: none`，真的加载成功才由 `.is-art` 换手；'
+        + '换手时 SVG 同时藏起来',
+        /display:\s*none/.test(imgBlk) &&
+        /\.rotate-guard-art\.is-art \.rotate-guard-img\s*\{\s*display:\s*block/.test(cssNC) &&
+        /\.rotate-guard-art\.is-art \.rotate-guard-icon\s*\{\s*display:\s*none/.test(cssNC));
+
+    ok('★★ P113b：那个"摆一下"只挂在 SVG 上（换成 GIF 之后它自己就在动，再摆会翻倍）',
+        !/animation:/.test(imgBlk) && !/animation:/.test(artBlk) &&
+        /animation:\s*guardTurn/.test((cssNC.match(/\.rotate-guard-icon\s*\{[^}]*\}/) || [''])[0]));
+
+    ok('★★ P113b：JS 换手要先等 `load`（缓存命中则看 complete/naturalWidth），'
+        + '加载失败退回自绘 SVG；而且**仍然不碰遮罩本身的显示**',
+        /getAttribute\('src'\)/.test(guardCode) &&
+        /addEventListener\('load'/.test(guardCode) &&
+        /addEventListener\('error'/.test(guardCode) &&
+        /complete && img\.naturalWidth > 0/.test(guardCode) &&
+        /classList\.add\('is-art'\)/.test(guardCode) &&
+        !/guard\.classList/.test(guardCode));
+})();
+
+/* ============================================================
    [2m] 面板文字挂在布局规格上（P56）
    ------------------------------------------------------------
    原来的毛病：`.media-panel-main` 靠 `justify-content: space-between`

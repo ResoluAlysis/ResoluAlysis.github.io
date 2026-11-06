@@ -429,6 +429,50 @@
     <div class="halftone-scan" aria-hidden="true"></div>
 
     <!-- ============================================================
+         ★★ P113：竖屏遮罩 —— "请横屏浏览"
+         ------------------------------------------------------------
+         · 这是**整站最高的一层**（z-index: 2147483647）：开屏那几层
+           （红幕 / 网点 / WELCOME）、页面内容、准星与指针、刻度尺……
+           全部在它下面 —— 转成竖屏的那一瞬间就该看见它，而不是等开屏演完 ✓
+         · 所以它必须放在 `.page-zoom` **外面**（和浮窗 / 游乐区同一个理由）：
+           `.page-zoom` 开屏期间挂着 transform，会变成 fixed 子元素的包含块，
+           放在里面的话这层遮罩会跟着整页被缩放、还定位错位 ✗
+         · 平时是 `opacity: 0` + `visibility: hidden`（两者都让它不进无障碍树、
+           也不吃点击）。**不能用 `display: none`** —— display 不参与过渡，
+           转回横屏会"啪"一下消失，P113c 那个渐出来不及演 ✗
+         · 只有 `@media (orientation: portrait)` 才是可见态 —— 判定完全交给 CSS，
+           转回横屏时淡出 320ms，没有 JS 时序问题 ✓
+         · js/orientation-guard.js 只干一件 CSS 干不了的事：竖屏时把滚轮 /
+           触摸 / 方向键拦掉（遮罩是不透明的，但底下不该还在滚）✓
+         ============================================================ -->
+    <div class="rotate-guard" data-guard="rotate" role="alert">
+        <!-- ★★ 图标位：默认是自绘的 SVG（描边手机 + 转 90° 的箭头）。
+             ────────────────────────────────────────────────────────────
+             想换成自己的图（PNG / GIF / WebP / SVG 都行）：
+             把下面这张 <img> 的 **src 填上** 就顶掉自绘图标 —— 不用动别的 ✓
+                 <img class="rotate-guard-img" data-guard="art-img" src="assets/images/rotate.gif" …>
+             · 留空时**不要写 src=""**（连属性都不要有）：那样它一个请求都不会发，
+               页面继续用自绘图标 ✓
+             · 建议正方形、透明底、边长 ≥ 152px（最大显示 76px，取二倍图不糊）
+             · GIF 会自己动 —— 换成动图之后那个"摆一下"就停用了（动画只挂在 SVG 上）
+             · 像素画想要硬边，在 style.css 的 .rotate-guard-img 里打开
+               `image-rendering: pixelated`
+             · 路径写错 / 图挂了 → 自动退回自绘 SVG（不会留一个破图图标）✓ -->
+        <div class="rotate-guard-art" data-guard="art">
+            <img class="rotate-guard-img" data-guard="art-img" src="assets/images/icon/_Null.png" alt="" width="76" height="76" />
+            <!--<svg class="rotate-guard-icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+                <rect x="17" y="11" width="14" height="24" rx="3" />
+                <line x1="22" y1="31" x2="26" y2="31" />
+                <path d="M15 20.5A10.5 10.5 0 0 0 33 20.5" />
+                <path d="M15 14.5v6h6" />
+            </svg>  -->
+        </div>
+        <p class="rotate-guard-title">请横屏浏览</p>
+        <p class="rotate-guard-hint">该页面按横屏排版的，竖屏排版没做噢...</p>
+        <p class="rotate-guard-tag">ROTATE / LANDSCAPE</p>
+    </div>
+
+    <!-- ============================================================
          作品浮窗
          ------------------------------------------------------------
          · 这里只有骨架，内容全部由 data/works.js + js/floating-window.js 填；
@@ -608,6 +652,11 @@
          位移全部由 style.css 那条 `translate: max(0px, …)` 算 ✓
          ★ 排在 world.js 之后（等 World.onLayout 量尺寸）✓ -->
     <script src="js/subtitle-dock.js"></script>
+
+    <!-- ★★ P113：竖屏遮罩的**输入拦截**（显示/隐藏完全由 CSS 决定）。
+         它只做一件 CSS 干不了的事：竖屏时把滚轮 / 触摸 / 方向键拦掉，
+         免得遮罩不透明、底下却还在滚 ✓ -->
+    <script src="js/orientation-guard.js"></script>
 </body>
 
 </html>
